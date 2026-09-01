@@ -84,7 +84,7 @@ Rust 平台解析器
 
 ### 使用 DMG
 
-1. 从本仓库的 **Releases** 页面下载最新的 `栖流 x.y.z.dmg`。
+1. 从本仓库的 **Releases** 页面下载最新的 `Qiliu-x.y.z-macOS.dmg`。
 2. 打开 DMG，将“栖流”拖入 `Applications`。
 3. 首次启动时填写虎牙或 Bilibili 直播间链接并保存。
 
