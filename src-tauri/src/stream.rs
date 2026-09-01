@@ -1,0 +1,23 @@
+use serde::Serialize;
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LiveStream {
+    pub platform: String,
+    pub platform_label: String,
+    pub source_url: String,
+    pub room_id: String,
+    pub title: String,
+    pub anchor: String,
+    pub avatar_url: String,
+    pub is_live: bool,
+    pub is_replay: bool,
+    pub url: Option<String>,
+    pub line_index: usize,
+    pub line_count: usize,
+    pub line_name: String,
+    pub quality_label: String,
+    pub bitrate: u32,
+    pub start_position_seconds: f64,
+    pub format: String,
+}

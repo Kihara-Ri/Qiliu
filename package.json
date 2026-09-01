@@ -1,0 +1,29 @@
+{
+  "name": "qiliu",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "check": "npm run test && npm run build && npm run test:rust",
+    "package:macos": "bash scripts/package-macos.sh",
+    "preview": "vite preview",
+    "test": "vitest run",
+    "test:rust": "cargo test --manifest-path src-tauri/Cargo.toml",
+    "tauri": "tauri"
+  },
+  "dependencies": {
+    "@tauri-apps/api": "^2",
+    "@tauri-apps/plugin-clipboard-manager": "^2.3.2",
+    "bootstrap-icons": "^1.13.1",
+    "hls.js": "^1.7.1",
+    "mpegts.js": "^1.8.2"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2",
+    "typescript": "~5.6.2",
+    "vite": "^6.0.3",
+    "vitest": "^4.1.11"
+  }
+}

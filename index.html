@@ -1,0 +1,303 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="stylesheet" href="/src/styles.css" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#0d0e0f" />
+    <title>栖流 · Qiliu</title>
+    <script type="module" src="/src/main.ts" defer></script>
+  </head>
+
+  <body>
+    <main class="app-shell" id="app" data-phase="idle">
+      <video id="live-video" autoplay playsinline aria-label="直播画面"></video>
+      <div class="player-wash" aria-hidden="true"></div>
+      <div class="window-drag-region" id="window-drag-region" aria-hidden="true"></div>
+
+      <button
+        class="settings-trigger"
+        id="settings-trigger"
+        type="button"
+        aria-label="设置直播源"
+        aria-controls="settings-panel"
+        aria-expanded="false"
+      >
+        <i class="bi bi-gear-fill" aria-hidden="true"></i>
+      </button>
+
+      <section class="playback-status" id="playback-status" role="status" aria-live="polite">
+        <div class="status-identity" aria-hidden="true">
+          <img class="status-avatar" id="status-avatar" alt="" hidden />
+          <span class="signal-mark"><i></i><i></i><i></i></span>
+        </div>
+        <div class="status-copy">
+          <p class="status-eyebrow" id="status-eyebrow">SIMPLE LIVE</p>
+          <h1 id="status-title">等待直播源</h1>
+          <p id="status-detail">使用右上角的设置按钮添加直播源收藏</p>
+        </div>
+      </section>
+
+      <aside class="settings-panel" id="settings-panel" aria-hidden="true">
+        <nav class="panel-tabs" role="tablist" aria-label="侧栏功能">
+          <button
+            id="panel-tab-settings"
+            class="panel-tab is-active"
+            type="button"
+            role="tab"
+            aria-selected="true"
+            aria-controls="panel-view-settings"
+            data-panel-section="settings"
+          >设置</button>
+          <button
+            id="panel-tab-favorites"
+            class="panel-tab"
+            type="button"
+            role="tab"
+            aria-selected="false"
+            aria-controls="panel-view-favorites"
+            data-panel-section="favorites"
+            tabindex="-1"
+          >收藏</button>
+          <button
+            id="panel-tab-monitor"
+            class="panel-tab"
+            type="button"
+            role="tab"
+            aria-selected="false"
+            aria-controls="panel-view-monitor"
+            data-panel-section="monitor"
+            tabindex="-1"
+          >监控</button>
+          <button
+            id="panel-tab-about"
+            class="panel-tab"
+            type="button"
+            role="tab"
+            aria-selected="false"
+            aria-controls="panel-view-about"
+            data-panel-section="about"
+            tabindex="-1"
+          >关于</button>
+        </nav>
+
+        <div class="panel-views">
+          <section
+            class="panel-view is-active"
+            id="panel-view-settings"
+            role="tabpanel"
+            aria-labelledby="panel-tab-settings"
+            data-panel-view="settings"
+          >
+            <form id="source-form" novalidate>
+              <label for="source-input">直播间链接</label>
+              <div class="source-input-wrap">
+                <input
+                  id="source-input"
+                  name="source"
+                  type="url"
+                  inputmode="url"
+                  autocomplete="off"
+                  spellcheck="false"
+                  placeholder="粘贴虎牙或 Bilibili 链接"
+                  required
+                />
+                <button
+                  class="source-copy"
+                  id="source-copy"
+                  type="button"
+                  aria-label="复制直播间链接"
+                  title="复制链接"
+                >
+                  <i class="bi bi-copy" aria-hidden="true"></i>
+                </button>
+              </div>
+              <span class="visually-hidden" id="copy-feedback" role="status" aria-live="polite"></span>
+              <p class="field-error" id="source-error" aria-live="polite"></p>
+              <button class="save-source" type="submit">收藏并播放</button>
+            </form>
+
+            <section class="bilibili-account" id="bilibili-account" aria-labelledby="bilibili-account-title">
+              <div class="account-heading">
+                <h3 id="bilibili-account-title">Bilibili</h3>
+                <output class="account-status" id="bilibili-account-status">正在检查</output>
+              </div>
+
+              <div class="account-summary">
+                <div class="account-avatar-shell" aria-hidden="true">
+                  <img
+                    id="bilibili-account-avatar"
+                    alt=""
+                    referrerpolicy="no-referrer"
+                    hidden
+                  />
+                  <span id="bilibili-account-mark">B</span>
+                </div>
+                <div class="account-copy">
+                  <h4 id="bilibili-account-name">读取登录状态</h4>
+                  <p id="bilibili-account-detail">登录后使用账号可用的最高画质。</p>
+                </div>
+              </div>
+
+              <div class="account-actions">
+                <button class="account-primary" id="bilibili-login" type="button">
+                  扫码登录
+                </button>
+                <button class="account-secondary" id="bilibili-logout" type="button" hidden>
+                  退出登录
+                </button>
+              </div>
+
+              <div class="qr-login" id="bilibili-qr-panel" aria-live="polite" hidden>
+                <img id="bilibili-qr-image" alt="Bilibili 登录二维码" />
+                <div class="qr-copy">
+                  <p id="bilibili-qr-status">请使用哔哩哔哩客户端扫码</p>
+                  <span>凭据只保存在 macOS 系统钥匙串中。</span>
+                  <button id="bilibili-qr-refresh" type="button" hidden>刷新二维码</button>
+                </div>
+              </div>
+            </section>
+          </section>
+
+          <section
+            class="panel-view"
+            id="panel-view-favorites"
+            role="tabpanel"
+            aria-labelledby="panel-tab-favorites"
+            data-panel-view="favorites"
+            hidden
+          >
+            <div class="favorites-toolbar">
+              <output id="favorites-count" aria-label="收藏数量">0 个直播间</output>
+              <button id="favorites-add" type="button">添加直播间</button>
+            </div>
+            <div class="favorites-list" id="favorites-list"></div>
+            <div class="favorites-empty" id="favorites-empty">
+              <p>还没有收藏</p>
+              <button id="favorites-empty-add" type="button">添加第一个直播间</button>
+            </div>
+          </section>
+
+          <section
+            class="panel-view"
+            id="panel-view-monitor"
+            role="tabpanel"
+            aria-labelledby="panel-tab-monitor"
+            data-panel-view="monitor"
+            hidden
+          >
+            <div class="monitor-heading" id="monitor-heading">
+              <span class="monitor-signal" aria-hidden="true"></span>
+              <output id="monitor-status">等待播放</output>
+              <span>排障工具</span>
+            </div>
+            <p class="monitor-empty" id="monitor-empty">开始播放后，这里会显示实时连接与解码数据。</p>
+            <section class="stream-inspector" id="stream-inspector" aria-label="实时播放信息" hidden>
+              <dl class="stream-stats">
+                <div><dt>画质</dt><dd id="stat-quality">—</dd></div>
+                <div><dt>标称码率</dt><dd id="stat-nominal-bitrate">—</dd></div>
+                <div><dt>实时码率</dt><dd id="stat-live-bitrate">采集中</dd></div>
+                <div><dt>分辨率</dt><dd id="stat-resolution">—</dd></div>
+                <div><dt>帧率</dt><dd id="stat-frame-rate">—</dd></div>
+                <div><dt>缓冲</dt><dd id="stat-buffer">—</dd></div>
+                <div><dt>掉帧</dt><dd id="stat-dropped-frames">—</dd></div>
+                <div><dt>线路</dt><dd id="stat-line">—</dd></div>
+                <div class="stat-wide"><dt>连接恢复</dt><dd id="stat-connection-health">—</dd></div>
+              </dl>
+            </section>
+          </section>
+
+          <section
+            class="panel-view"
+            id="panel-view-about"
+            role="tabpanel"
+            aria-labelledby="panel-tab-about"
+            data-panel-view="about"
+            hidden
+          >
+            <div class="about-product">
+              <img src="/app-icon.svg" alt="" />
+              <div>
+                <strong>栖流</strong>
+                <span>Qiliu · 1.0.0 · AGPL-3.0-only</span>
+              </div>
+            </div>
+
+            <div class="about-details">
+              <details>
+                <summary>画质与 QN</summary>
+                <p>Bilibili QN 是画质档位编号，不是码率；实际画质以分辨率与实时码率为准。</p>
+              </details>
+              <details>
+                <summary>线路与连接恢复</summary>
+                <p>线路表示当前 CDN。应用优先续接同一线路，只在连续失败时才换线。</p>
+              </details>
+              <details>
+                <summary>数据与账号</summary>
+                <p>收藏保存在本机；Bilibili 登录凭据单独存放在 macOS 系统钥匙串中。</p>
+              </details>
+            </div>
+
+            <div class="about-links" aria-label="GitHub 参考项目">
+              <div>
+                <span><strong>Pure Live</strong><small>参考项目</small></span>
+                <button type="button" data-copy-value="https://github.com/liuchuancong/pure_live" aria-label="复制 Pure Live GitHub 链接">
+                  <i class="bi bi-copy" aria-hidden="true"></i>
+                </button>
+              </div>
+              <div>
+                <span><strong>mpegts.js</strong><small>播放内核</small></span>
+                <button type="button" data-copy-value="https://github.com/xqq/mpegts.js" aria-label="复制 mpegts.js GitHub 链接">
+                  <i class="bi bi-copy" aria-hidden="true"></i>
+                </button>
+              </div>
+              <output id="about-copy-feedback" role="status" aria-live="polite"></output>
+            </div>
+          </section>
+        </div>
+      </aside>
+
+      <div class="volume-control" id="volume-control" aria-label="音量控制">
+        <button
+          class="volume-toggle"
+          id="volume-toggle"
+          type="button"
+          aria-label="静音"
+          aria-controls="volume-slider-shell"
+          aria-expanded="false"
+          aria-pressed="false"
+          title="静音"
+        >
+          <span class="volume-icon" id="volume-icon" data-level="high" aria-hidden="true">
+            <i class="bi bi-volume-off-fill" id="volume-speaker"></i>
+            <span class="volume-wave volume-wave-1"></span>
+            <span class="volume-wave volume-wave-2"></span>
+            <span class="volume-wave volume-wave-3"></span>
+          </span>
+        </button>
+        <div
+          class="volume-slider-shell"
+          id="volume-slider-shell"
+          aria-hidden="true"
+          inert
+        >
+          <input
+            class="volume-slider"
+            id="volume-slider"
+            type="range"
+            min="0"
+            max="100"
+            step="5"
+            value="100"
+            aria-label="音量"
+          />
+          <output class="visually-hidden" id="volume-output" for="volume-slider">100%</output>
+        </div>
+      </div>
+
+      <button class="sound-unlock" id="sound-unlock" type="button" hidden>
+        点一下画面打开声音
+      </button>
+    </main>
+  </body>
+</html>

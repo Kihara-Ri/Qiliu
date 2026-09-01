@@ -1,0 +1,46 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "栖流",
+  "version": "1.0.0",
+  "identifier": "com.kiharari.simplelive",
+  "build": {
+    "beforeDevCommand": "npm run dev",
+    "devUrl": "http://localhost:1420",
+    "beforeBuildCommand": "npm run build",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "withGlobalTauri": false,
+    "windows": [
+      {
+        "label": "main",
+        "title": "栖流",
+        "width": 1280,
+        "height": 720,
+        "minWidth": 640,
+        "minHeight": 360,
+        "center": true,
+        "resizable": true,
+        "fullscreen": false,
+        "hiddenTitle": true,
+        "titleBarStyle": "Overlay"
+      }
+    ],
+    "security": {
+      "csp": "default-src 'self' customprotocol: asset:; connect-src 'self' ipc: http://ipc.localhost https://*.huya.com https://huya.com https://*.bilibili.com https://bilibili.com https://*.bilivideo.com https://bilivideo.com; worker-src 'self' blob:; img-src 'self' asset: http://asset.localhost data: https://huyaimg.msstatic.com https://*.hdslb.com https://hdslb.com; media-src 'self' https://*.huya.com https://huya.com https://*.bilivideo.com https://bilivideo.com https://*.bilibili.com https://bilibili.com blob:; style-src 'self'; font-src 'self'; object-src 'none'; frame-src 'none'; base-uri 'none'; form-action 'none'"
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["app", "dmg"],
+    "category": "Entertainment",
+    "shortDescription": "安静观看你关注的虎牙与 Bilibili 直播",
+    "longDescription": "栖流是一款支持虎牙、Bilibili 与本地直播收藏的轻量桌面播放器。",
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns"
+    ]
+  }
+}
