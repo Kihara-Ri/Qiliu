@@ -4,9 +4,9 @@
   <img src="public/app-icon.svg" width="128" height="128" alt="栖流应用图标">
 </p>
 
-栖流是一款面向 macOS 的轻量桌面直播播放器。它只保留观看所必需的内容：打开应用自动播放、一个可隐藏的侧边面板、直播收藏和音量控制。
+栖流是一款面向 macOS、Windows 与 Android 的轻量直播播放器。它只保留观看所必需的内容：打开应用自动播放、一个按需出现的设置层、直播收藏和音量控制。
 
-当前版本：**1.0.0**
+当前版本：**1.1.0**
 支持来源：**虎牙、Bilibili**
 技术栈：**Tauri 2、Rust、TypeScript、mpegts.js、HLS.js**
 
@@ -32,6 +32,8 @@
 - 左下角音量按钮支持静音，并按低、中、高三级显示声波。
 - 设置、收藏、监控和关于彼此分离；调试信息不会占据日常界面。
 - Bilibili 支持应用内扫码登录，以获取账号实际可用的更高画质。
+- 手机竖屏使用底部抽屉和底部功能标签；横屏短视口自动切换为全屏设置层。
+- 所有移动端主要控件至少 44px，触屏打开面板时不会自动唤起软键盘。
 
 ## 技术原理
 
@@ -55,7 +57,7 @@ Rust 平台解析器
 
 ### 2. FLV 只做解复用，视频交给系统解码
 
-直播使用 `mpegts.js` 将 FLV 解复用到 Media Source Extensions；回放使用 `HLS.js`。应用不打包 FFmpeg、VLC 或 libmpv，H.264 最终仍由 macOS / WebKit 的系统视频链路解码。
+直播使用 `mpegts.js` 将 FLV 解复用到 Media Source Extensions；回放使用 `HLS.js`。应用不打包 FFmpeg、VLC 或 libmpv，H.264 最终由各系统 WebView 的媒体链路解码。
 
 这种方案安装体积小、前端可控，也便于观察缓冲、帧率和掉帧；代价是必须认真处理 WebKit MSE 的缓冲边界和原生视频层合成行为。
 
@@ -74,15 +76,15 @@ Rust 平台解析器
 ### 4. 账号和本机数据分层保存
 
 - 收藏、上次播放项和音量保存在本机 `localStorage`。
-- Bilibili Cookie 只由 Rust 处理，并保存在 macOS 系统钥匙串。
+- Bilibili Cookie 只由 Rust 处理，并保存在 Apple 钥匙串、Windows 凭据管理器或 Android Keystore 加密的安全存储中。
 - Cookie 不进入 DOM、收藏数据或应用日志。
-- 退出登录只删除本机钥匙串凭据，不影响网页端或其他设备。
+- 退出登录只删除当前设备的安全凭据，不影响网页端或其他设备。
 
 为保证从旧版 Simple Live 覆盖升级后数据连续，Bundle ID、旧 `localStorage` key 和钥匙串 service 暂时保留为兼容层；对外产品名称已经统一为“栖流 / Qiliu”。
 
 ## 安装
 
-### 使用 DMG
+### macOS
 
 1. 从本仓库的 **Releases** 页面下载最新的 `Qiliu-x.y.z-macOS.dmg`。
 2. 打开 DMG，将“栖流”拖入 `Applications`。
@@ -90,14 +92,23 @@ Rust 平台解析器
 
 当前公开构建使用本地 ad-hoc 签名，尚未经过 Apple 公证。如果 macOS 阻止首次启动，请在 Finder 中右键应用并选择“打开”，确认应用来源后再启动。
 
+### Windows
+
+从 **Releases** 下载 `Qiliu-x.y.z-Windows-x64-setup.exe` 并运行。当前 NSIS 安装程序按当前用户安装，不要求系统级目录写入权限；公开构建尚未购买 Windows 代码签名证书，SmartScreen 可能显示来源提醒。
+
+### Android
+
+从 **Releases** 下载 `Qiliu-x.y.z-Android-arm64.apk`。系统首次侧载时会要求允许当前文件管理器或浏览器安装未知应用。
+
+文件名带 `-debug.apk` 的构建使用调试签名，只用于测试；固定 release keystore 签名的 APK 才支持后续版本原地覆盖升级。
+
 ### 从源码运行
 
-准备环境：
+桌面端准备环境：
 
-- macOS 13 或更高版本；
 - Node.js 20 LTS 或更高版本；
 - Rust stable；
-- Xcode Command Line Tools。
+- macOS 需要 Xcode Command Line Tools；Windows 需要 Microsoft C++ Build Tools 与 WebView2。
 
 ```bash
 git clone https://github.com/Kihara-Ri/Qiliu.git
@@ -127,6 +138,12 @@ npm run check
 - TypeScript 类型检查和 Vite 生产构建；
 - Rust 房间解析、链接校验、画质选择、签名与登录数据处理测试。
 
+当前桌面系统一键检查并打包：
+
+```bash
+npm run package:current
+```
+
 构建 macOS 应用：
 
 ```bash
@@ -148,8 +165,28 @@ npm run package:macos
 脚本会执行 ad-hoc 签名验证、创建压缩 DMG 并输出 SHA-256。安装包位于：
 
 ```text
-release/栖流 1.0.0.dmg
+release/栖流 1.1.0.dmg
 ```
+
+Windows x64 NSIS 安装程序（需在 Windows 运行）：
+
+```bash
+npm run package:windows
+```
+
+Android arm64 调试 APK（需 Android SDK、NDK 和 JDK 17）：
+
+```bash
+npm run package:android
+```
+
+准备新版本并同步所有版本号：
+
+```bash
+npm run release:prepare -- 1.2.0
+```
+
+推送对应的 `v1.2.0` 标签后，GitHub Actions 会在原生 macOS、Windows 与 Android 环境构建并把安装包集中发布到同一个 Release。完整环境、签名和故障排查见 [跨平台界面与构建](docs/cross-platform-builds.md)。
 
 真实直播长时间播放测试依赖当前房间状态、平台接口和网络环境，不包含在默认自动化测试中。发布新版本前应分别用一个正在直播的虎牙和 Bilibili 房间进行持续播放验证。
 
@@ -172,6 +209,7 @@ docs/
   huya-stream-source-system.md 虎牙完整技术与故障记录
   bilibili-and-favorites.md    Bilibili 画质、登录与收藏说明
   settings-panel-layout.md     面板布局和合成约束
+  cross-platform-builds.md     移动端布局、三平台构建与自动发布
 ```
 
 ## 已知边界
@@ -179,13 +217,14 @@ docs/
 - 当前只解析虎牙和 Bilibili，不支持弹幕、礼物、搜索或平台推荐。
 - Bilibili 的最高可用档位由账号权限、主播推流和平台策略共同决定；登录并不保证所有房间都提供相同画质。
 - 自动恢复可以减少短暂中断，但无法消除主播推流故障、平台服务异常或本地网络中断。
-- 当前发布流程只在 macOS 上完成实际验证，其他系统图标与构建文件由 Tauri 生成，但尚未做真实验收。
+- 自动化构建通过不等于真实设备长时间播放通过；Windows 和 Android 仍需分别完成直播、回放、扫码登录、休眠恢复和弱网验收。
 
 ## 进一步阅读
 
 - [虎牙直播源系统技术文档](docs/huya-stream-source-system.md)
 - [Bilibili 与直播收藏技术说明](docs/bilibili-and-favorites.md)
 - [右侧面板布局说明](docs/settings-panel-layout.md)
+- [跨平台界面与构建](docs/cross-platform-builds.md)
 
 ## 参考与许可
 

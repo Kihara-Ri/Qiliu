@@ -82,6 +82,9 @@ const bilibiliQrRefresh = element<HTMLButtonElement>("bilibili-qr-refresh");
 const aboutCopyFeedback = element<HTMLOutputElement>("about-copy-feedback");
 const aboutCopyButtons = Array.from(settingsPanel.querySelectorAll<HTMLButtonElement>("[data-copy-value]"));
 const appWindow = getCurrentWindow();
+const coarsePointer = window.matchMedia("(pointer: coarse)");
+
+document.documentElement.dataset.input = coarsePointer.matches ? "touch" : "pointer";
 
 type PanelSection = "settings" | "favorites" | "monitor" | "about";
 
@@ -153,6 +156,7 @@ aboutCopyButtons.forEach((button) => {
   button.addEventListener("click", () => void copyAboutLink(button));
 });
 windowDragRegion.addEventListener("mousedown", (event) => {
+  if (coarsePointer.matches) return;
   if (event.button !== 0) return;
   void appWindow.isFullscreen().then((fullscreen) => {
     if (!fullscreen) void appWindow.startDragging();
@@ -205,7 +209,10 @@ bilibiliLogin.addEventListener("click", () => void startBilibiliQrLogin());
 bilibiliQrRefresh.addEventListener("click", () => void startBilibiliQrLogin());
 bilibiliLogout.addEventListener("click", () => void logoutBilibili());
 
-volumeToggle.addEventListener("click", () => void toggleMute());
+volumeToggle.addEventListener("click", () => {
+  if (coarsePointer.matches) expandVolumeControl();
+  void toggleMute();
+});
 volumeToggle.addEventListener("pointerenter", expandVolumeControl);
 volumeToggle.addEventListener("pointerleave", () => scheduleVolumeCollapse(true));
 volumeSliderShell.addEventListener("pointerenter", expandVolumeControl);
@@ -226,6 +233,7 @@ video.addEventListener("click", () => {
   if (!soundUnlock.hidden) void restoreSound();
 });
 app.addEventListener("dblclick", (event) => {
+  if (coarsePointer.matches) return;
   const target = event.target;
   if (!(target instanceof Element)) return;
   if (target.closest("button, input, .settings-panel")) return;
@@ -717,6 +725,10 @@ function setSettingsOpen(open: boolean): void {
     setPanelSection("settings");
     app.classList.add("settings-open");
     panelFocusTimer = window.setTimeout(() => {
+      if (coarsePointer.matches) {
+        panelFocusTimer = undefined;
+        return;
+      }
       if (settingsOpen && bilibiliQrPanel.hidden) {
         sourceInput.focus();
       } else if (settingsOpen) {

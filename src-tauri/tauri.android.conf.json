@@ -1,0 +1,13 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "栖流",
+        "fullscreen": true,
+        "decorations": false
+      }
+    ]
+  }
+}

@@ -11,6 +11,30 @@ use stream::LiveStream;
 use tauri::State;
 use url::Url;
 
+fn initialize_secure_store() -> Result<(), String> {
+    #[cfg(any(target_os = "macos", target_os = "ios"))]
+    let store = apple_native_keyring_store::keychain::Store::new()
+        .map_err(|error| format!("无法初始化 Apple 钥匙串：{error}"))?;
+
+    #[cfg(target_os = "windows")]
+    let store = windows_native_keyring_store::Store::new()
+        .map_err(|error| format!("无法初始化 Windows 凭据管理器：{error}"))?;
+
+    #[cfg(target_os = "android")]
+    let store = android_native_keyring_store::Store::new()
+        .map_err(|error| format!("无法初始化 Android 安全存储：{error}"))?;
+
+    #[cfg(any(
+        target_os = "macos",
+        target_os = "ios",
+        target_os = "windows",
+        target_os = "android"
+    ))]
+    keyring_core::set_default_store(store);
+
+    Ok(())
+}
+
 struct LiveClients {
     huya: HuyaClient,
     bilibili: BilibiliClient,
@@ -97,6 +121,7 @@ async fn logout_bilibili(clients: State<'_, LiveClients>) -> Result<BilibiliAuth
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    initialize_secure_store().expect("failed to initialize the platform secure store");
     let live_clients = LiveClients::new().expect("failed to initialize live-source HTTP clients");
     let builder = tauri::Builder::default().plugin(tauri_plugin_clipboard_manager::init());
 

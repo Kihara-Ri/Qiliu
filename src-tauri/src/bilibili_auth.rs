@@ -3,7 +3,7 @@ use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
 use base64::{engine::general_purpose::STANDARD, Engine as _};
-use keyring::{Entry, Error as KeyringError};
+use keyring_core::{Entry, Error as KeyringError};
 use qrcode::{render::svg, QrCode};
 use reqwest::{
     header::{COOKIE, SET_COOKIE},
@@ -245,8 +245,8 @@ impl BilibiliAuth {
             }
         }
 
-        // macOS may take several seconds to authorize an ad-hoc signed build's
-        // Keychain read. Keep that blocking OS call off the async runtime and,
+        // A native secure store may take several seconds to authorize a read.
+        // Keep that blocking OS call off the async runtime and,
         // crucially, do not hold the cache mutex while it is in progress. A
         // public stream can then start immediately and upgrade after auth loads.
         let cookie = tauri::async_runtime::spawn_blocking(read_keyring_cookie)

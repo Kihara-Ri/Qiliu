@@ -48,7 +48,7 @@
             aria-selected="true"
             aria-controls="panel-view-settings"
             data-panel-section="settings"
-          >设置</button>
+          ><i class="bi bi-sliders2" aria-hidden="true"></i><span>设置</span></button>
           <button
             id="panel-tab-favorites"
             class="panel-tab"
@@ -58,7 +58,7 @@
             aria-controls="panel-view-favorites"
             data-panel-section="favorites"
             tabindex="-1"
-          >收藏</button>
+          ><i class="bi bi-bookmark-heart" aria-hidden="true"></i><span>收藏</span></button>
           <button
             id="panel-tab-monitor"
             class="panel-tab"
@@ -68,7 +68,7 @@
             aria-controls="panel-view-monitor"
             data-panel-section="monitor"
             tabindex="-1"
-          >监控</button>
+          ><i class="bi bi-activity" aria-hidden="true"></i><span>监控</span></button>
           <button
             id="panel-tab-about"
             class="panel-tab"
@@ -78,7 +78,7 @@
             aria-controls="panel-view-about"
             data-panel-section="about"
             tabindex="-1"
-          >关于</button>
+          ><i class="bi bi-info-circle" aria-hidden="true"></i><span>关于</span></button>
         </nav>
 
         <div class="panel-views">
@@ -152,7 +152,7 @@
                 <img id="bilibili-qr-image" alt="Bilibili 登录二维码" />
                 <div class="qr-copy">
                   <p id="bilibili-qr-status">请使用哔哩哔哩客户端扫码</p>
-                  <span>凭据只保存在 macOS 系统钥匙串中。</span>
+                  <span>凭据只保存在当前设备的系统安全存储中。</span>
                   <button id="bilibili-qr-refresh" type="button" hidden>刷新二维码</button>
                 </div>
               </div>
@@ -219,7 +219,7 @@
               <img src="/app-icon.svg" alt="" />
               <div>
                 <strong>栖流</strong>
-                <span>Qiliu · 1.0.0 · AGPL-3.0-only</span>
+                <span>Qiliu · 1.1.0 · AGPL-3.0-only</span>
               </div>
             </div>
 
@@ -234,7 +234,7 @@
               </details>
               <details>
                 <summary>数据与账号</summary>
-                <p>收藏保存在本机；Bilibili 登录凭据单独存放在 macOS 系统钥匙串中。</p>
+                <p>收藏保存在本机；Bilibili 登录凭据单独存放在当前系统的安全凭据存储中。</p>
               </details>
             </div>
 
