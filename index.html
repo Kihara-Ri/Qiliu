@@ -15,6 +15,18 @@
       <div class="player-wash" aria-hidden="true"></div>
       <div class="window-drag-region" id="window-drag-region" aria-hidden="true"></div>
 
+      <div class="window-controls" id="window-controls" aria-label="窗口控制">
+        <button id="window-minimize" type="button" aria-label="最小化窗口" title="最小化">
+          <i class="bi bi-dash-lg" aria-hidden="true"></i>
+        </button>
+        <button id="window-maximize" type="button" aria-label="最大化或还原窗口" title="最大化或还原">
+          <i class="bi bi-square" aria-hidden="true"></i>
+        </button>
+        <button class="window-close" id="window-close" type="button" aria-label="关闭窗口" title="关闭">
+          <i class="bi bi-x-lg" aria-hidden="true"></i>
+        </button>
+      </div>
+
       <button
         class="settings-trigger"
         id="settings-trigger"
@@ -32,14 +44,14 @@
           <span class="signal-mark"><i></i><i></i><i></i></span>
         </div>
         <div class="status-copy">
-          <p class="status-eyebrow" id="status-eyebrow">SIMPLE LIVE</p>
+          <p class="status-eyebrow" id="status-eyebrow">QILIU</p>
           <h1 id="status-title">等待直播源</h1>
-          <p id="status-detail">使用右上角的设置按钮添加直播源收藏</p>
+          <p id="status-detail">使用右上角的设置按钮粘贴直播间链接</p>
         </div>
       </section>
 
       <aside class="settings-panel" id="settings-panel" aria-hidden="true">
-        <nav class="panel-tabs" role="tablist" aria-label="侧栏功能">
+        <nav class="panel-tabs" id="panel-tabs" role="tablist" aria-label="侧栏功能">
           <button
             id="panel-tab-settings"
             class="panel-tab is-active"
@@ -79,6 +91,7 @@
             data-panel-section="about"
             tabindex="-1"
           ><i class="bi bi-info-circle" aria-hidden="true"></i><span>关于</span></button>
+          <span class="panel-tab-indicator" aria-hidden="true"></span>
         </nav>
 
         <div class="panel-views">
@@ -114,8 +127,35 @@
               </div>
               <span class="visually-hidden" id="copy-feedback" role="status" aria-live="polite"></span>
               <p class="field-error" id="source-error" aria-live="polite"></p>
-              <button class="save-source" type="submit">收藏并播放</button>
+              <div class="source-actions">
+                <button class="play-source" type="submit">
+                  <i class="bi bi-play-fill" aria-hidden="true"></i><span>立即播放</span>
+                </button>
+                <button class="favorite-source" id="source-favorite" type="button" aria-pressed="false">
+                  <i class="bi bi-bookmark-heart" aria-hidden="true"></i><span>收藏</span>
+                </button>
+              </div>
+              <output class="source-action-status" id="source-action-status" aria-live="polite"></output>
             </form>
+
+            <section class="current-room" id="current-room" aria-labelledby="current-room-title" hidden>
+              <div class="current-room-summary">
+                <div class="current-room-avatar-shell" aria-hidden="true">
+                  <img id="current-room-avatar" alt="" referrerpolicy="no-referrer" hidden />
+                  <i class="bi bi-play-fill" id="current-room-avatar-mark"></i>
+                </div>
+                <div class="current-room-copy">
+                  <output id="current-room-state">正在连接</output>
+                  <h3 id="current-room-title">正在读取直播间</h3>
+                  <p id="current-room-anchor">正在读取主播信息</p>
+                </div>
+              </div>
+              <div class="stream-preferences">
+                <label for="quality-select"><span>画质</span><select id="quality-select" disabled></select></label>
+                <label for="line-select"><span>线路</span><select id="line-select" disabled></select></label>
+              </div>
+              <output class="stream-switch-status" id="stream-switch-status" aria-live="polite"></output>
+            </section>
 
             <section class="bilibili-account" id="bilibili-account" aria-labelledby="bilibili-account-title">
               <div class="account-heading">
@@ -165,7 +205,8 @@
             role="tabpanel"
             aria-labelledby="panel-tab-favorites"
             data-panel-view="favorites"
-            hidden
+            aria-hidden="true"
+            inert
           >
             <div class="favorites-toolbar">
               <output id="favorites-count" aria-label="收藏数量">0 个直播间</output>
@@ -184,7 +225,8 @@
             role="tabpanel"
             aria-labelledby="panel-tab-monitor"
             data-panel-view="monitor"
-            hidden
+            aria-hidden="true"
+            inert
           >
             <div class="monitor-heading" id="monitor-heading">
               <span class="monitor-signal" aria-hidden="true"></span>
@@ -213,13 +255,14 @@
             role="tabpanel"
             aria-labelledby="panel-tab-about"
             data-panel-view="about"
-            hidden
+            aria-hidden="true"
+            inert
           >
             <div class="about-product">
               <img src="/app-icon.svg" alt="" />
               <div>
                 <strong>栖流</strong>
-                <span>Qiliu · 1.1.0 · AGPL-3.0-only</span>
+                <span>Qiliu · 1.2.0 · AGPL-3.0-only</span>
               </div>
             </div>
 

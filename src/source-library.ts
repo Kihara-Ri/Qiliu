@@ -1,5 +1,6 @@
 export const SOURCE_LIBRARY_STORAGE_KEY = "simple-live.source-library.v1";
 export const LEGACY_HUYA_SOURCE_STORAGE_KEY = "simple-live.huya-source.v1";
+export const LAST_PLAYED_SOURCE_STORAGE_KEY = "simple-live.last-source.v1";
 
 const SOURCE_LIBRARY_VERSION = 1;
 const MAX_FAVORITES = 50;
@@ -71,6 +72,26 @@ export function writeSourceLibrary(
   library: SourceLibraryState,
 ): void {
   storage.setItem(SOURCE_LIBRARY_STORAGE_KEY, JSON.stringify(sanitizeLibrary(library)));
+}
+
+export function readLastPlayedSource(
+  storage: Pick<Storage, "getItem">,
+  library: SourceLibraryState,
+): Extract<NormalizeSourceResult, { ok: true }> | null {
+  const saved = normalizeLiveSource(storage.getItem(LAST_PLAYED_SOURCE_STORAGE_KEY) ?? "");
+  if (saved.ok) return saved;
+  const legacyActive = activeFavorite(library);
+  if (!legacyActive) return null;
+  const normalized = normalizeLiveSource(legacyActive.source);
+  return normalized.ok ? normalized : null;
+}
+
+export function writeLastPlayedSource(
+  storage: Pick<Storage, "setItem">,
+  source: string,
+): void {
+  const normalized = normalizeLiveSource(source);
+  if (normalized.ok) storage.setItem(LAST_PLAYED_SOURCE_STORAGE_KEY, normalized.source);
 }
 
 export function normalizeLiveSource(value: string): NormalizeSourceResult {
@@ -173,6 +194,42 @@ export function addOrActivateSource(
   return { version: SOURCE_LIBRARY_VERSION, activeId: favorite.id, favorites };
 }
 
+export function addFavoriteSource(
+  library: SourceLibraryState,
+  normalized: Extract<NormalizeSourceResult, { ok: true }>,
+  now = Date.now(),
+): SourceLibraryState {
+  const existing = library.favorites.find((favorite) => favorite.id === normalized.id);
+  if (existing) {
+    if (existing.source === normalized.source) return library;
+    const favorites = library.favorites.map((favorite) =>
+      favorite.id === normalized.id ? { ...favorite, source: normalized.source } : favorite,
+    );
+    return { ...library, favorites };
+  }
+  const favorite: FavoriteSource = {
+    id: normalized.id,
+    source: normalized.source,
+    platform: normalized.platform,
+    platformLabel: normalized.platformLabel,
+    roomId: normalized.roomId,
+    anchor: "",
+    title: "",
+    avatarUrl: "",
+    addedAt: now,
+    lastPlayedAt: now,
+  };
+  return {
+    version: SOURCE_LIBRARY_VERSION,
+    activeId: library.activeId,
+    favorites: [favorite, ...library.favorites].slice(0, MAX_FAVORITES),
+  };
+}
+
+export function deactivateFavorite(library: SourceLibraryState): SourceLibraryState {
+  return library.activeId === null ? library : { ...library, activeId: null };
+}
+
 export function activateFavorite(
   library: SourceLibraryState,
   id: string,
@@ -191,10 +248,10 @@ export function activateFavorite(
 export function removeFavorite(library: SourceLibraryState, id: string): SourceLibraryState {
   const favorites = library.favorites.filter((favorite) => favorite.id !== id);
   const activeId = library.activeId === id
-    ? favorites[0]?.id ?? null
+    ? null
     : favorites.some((favorite) => favorite.id === library.activeId)
       ? library.activeId
-      : favorites[0]?.id ?? null;
+      : null;
   return { version: SOURCE_LIBRARY_VERSION, activeId, favorites };
 }
 
@@ -272,7 +329,7 @@ function sanitizeLibrary(value: unknown): SourceLibraryState {
   const requestedActiveId = typeof value.activeId === "string" ? value.activeId : null;
   const activeId = favorites.some((favorite) => favorite.id === requestedActiveId)
     ? requestedActiveId
-    : favorites[0]?.id ?? null;
+    : null;
   return { version: SOURCE_LIBRARY_VERSION, activeId, favorites };
 }
 

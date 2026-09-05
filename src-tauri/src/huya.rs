@@ -9,7 +9,7 @@ use serde_json::Value;
 use url::{form_urlencoded, Url};
 
 use crate::huya_wup::resolve_replay;
-use crate::stream::LiveStream;
+use crate::stream::{LiveStream, StreamLineOption, StreamQualityOption};
 
 const HUYA_ROOM_API: &str = "https://mp.huya.com/cache.php";
 const HUYA_ORIGIN: &str = "https://www.huya.com";
@@ -169,7 +169,12 @@ impl HuyaClient {
                 line_index: 0,
                 line_count: 1,
                 line_name: "录像".to_string(),
+                line_options: vec![StreamLineOption {
+                    index: 0,
+                    label: "录像回放".to_string(),
+                }],
                 quality_label,
+                quality_options: Vec::new(),
                 bitrate: nominal_bitrate,
                 start_position_seconds,
                 format: "hls".to_string(),
@@ -191,7 +196,9 @@ impl HuyaClient {
                 line_index: 0,
                 line_count: 0,
                 line_name: String::new(),
+                line_options: Vec::new(),
                 quality_label: String::new(),
+                quality_options: Vec::new(),
                 bitrate,
                 start_position_seconds: 0.0,
                 format: String::new(),
@@ -207,6 +214,8 @@ impl HuyaClient {
         let line = &lines[line_index];
         let url = build_play_url(line, bitrate, now_millis()?)?;
         let (quality_label, nominal_bitrate) = selected_quality(data, bitrate);
+        let line_options = live_line_options(&lines);
+        let quality_options = available_qualities(data);
 
         Ok(LiveStream {
             platform: "huya".to_string(),
@@ -222,7 +231,9 @@ impl HuyaClient {
             line_index,
             line_count: lines.len(),
             line_name: line.cdn_type.clone(),
+            line_options,
             quality_label,
+            quality_options,
             bitrate: nominal_bitrate,
             start_position_seconds: 0.0,
             format: if line.is_flv { "flv" } else { "hls" }.to_string(),
@@ -514,6 +525,55 @@ fn selected_quality(data: &Value, requested_bitrate: u32) -> (String, u32) {
     (label, nominal_bitrate)
 }
 
+fn live_line_options(lines: &[RawLine]) -> Vec<StreamLineOption> {
+    lines
+        .iter()
+        .enumerate()
+        .map(|(index, line)| StreamLineOption {
+            index,
+            label: if line.cdn_type.trim().is_empty() {
+                format!("线路 {}", index + 1)
+            } else {
+                format!("{} · 线路 {}", line.cdn_type.trim(), index + 1)
+            },
+        })
+        .collect()
+}
+
+fn available_qualities(data: &Value) -> Vec<StreamQualityOption> {
+    let mut options = vec![StreamQualityOption {
+        value: 0,
+        label: "原画".to_string(),
+    }];
+    let qualities = data
+        .pointer("/liveData/bitRateInfo")
+        .and_then(Value::as_str)
+        .and_then(|raw| serde_json::from_str::<Vec<Value>>(raw).ok())
+        .unwrap_or_default();
+    for entry in qualities {
+        let Some(value) = entry
+            .get("iBitRate")
+            .and_then(value_as_u64)
+            .and_then(|value| u32::try_from(value).ok())
+            .filter(|value| *value > 0 && *value <= MAX_BITRATE_KBPS)
+        else {
+            continue;
+        };
+        if options.iter().any(|option| option.value == value) {
+            continue;
+        }
+        let label = entry
+            .get("sDisplayName")
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .filter(|label| !label.is_empty())
+            .map(str::to_string)
+            .unwrap_or_else(|| format!("{value} kbps"));
+        options.push(StreamQualityOption { value, label });
+    }
+    options
+}
+
 fn non_empty_or(primary: String, fallback: String) -> String {
     if primary.is_empty() {
         fallback
@@ -685,6 +745,39 @@ mod tests {
         assert_eq!(
             selected_quality(&data, 4_000),
             ("蓝光4M".to_string(), 4_000)
+        );
+
+        let qualities = available_qualities(&data);
+        assert_eq!(
+            qualities
+                .iter()
+                .map(|option| (option.value, option.label.as_str()))
+                .collect::<Vec<_>>(),
+            [(0, "原画"), (4_000, "蓝光4M")]
+        );
+    }
+
+    #[test]
+    fn exposes_huya_lines_in_playback_order() {
+        let data = json!({
+            "profileInfo": { "uid": 42 },
+            "stream": {
+                "baseSteamInfoList": [
+                    {"sCdnType": "AL", "sFlvUrl": "http://al.flv.huya.com/src", "sFlvAntiCode": "a", "sStreamName": "42-demo"},
+                    {"sCdnType": "HS", "sFlvUrl": "http://hs.flv.huya.com/src", "sFlvAntiCode": "b", "sStreamName": "42-demo"}
+                ],
+                "flv": { "multiLine": [{"cdnType": "HS"}, {"cdnType": "AL"}] }
+            }
+        });
+
+        let lines = extract_live_lines(&data);
+        let options = live_line_options(&lines);
+        assert_eq!(
+            options
+                .iter()
+                .map(|option| (option.index, option.label.as_str()))
+                .collect::<Vec<_>>(),
+            [(0, "HS · 线路 1"), (1, "AL · 线路 2")]
         );
     }
 

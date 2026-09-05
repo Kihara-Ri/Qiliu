@@ -9,7 +9,7 @@ use serde_json::Value;
 use url::Url;
 
 use crate::bilibili_auth::{BilibiliAuth, BilibiliAuthStatus, BilibiliQrLogin, BilibiliQrPoll};
-use crate::stream::LiveStream;
+use crate::stream::{LiveStream, StreamLineOption, StreamQualityOption};
 
 const BILIBILI_ROOM_INFO_API: &str = "https://api.live.bilibili.com/room/v1/Room/get_info";
 const BILIBILI_MASTER_INFO_API: &str = "https://api.live.bilibili.com/live_user/v1/Master/info";
@@ -17,7 +17,6 @@ const BILIBILI_PLAY_INFO_API: &str =
     "https://api.live.bilibili.com/xlive/web-room/v2/index/getRoomPlayInfo";
 const BILIBILI_USER_AGENT: &str =
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36";
-const FALLBACK_QN: u32 = 400;
 
 pub struct BilibiliClient {
     http: Client,
@@ -118,7 +117,9 @@ impl BilibiliClient {
                 line_index: 0,
                 line_count: 0,
                 line_name: String::new(),
+                line_options: Vec::new(),
                 quality_label: String::new(),
+                quality_options: Vec::new(),
                 bitrate: 0,
                 start_position_seconds: 0.0,
                 format: String::new(),
@@ -135,8 +136,8 @@ impl BilibiliClient {
             )
         } else {
             (
-                self.request_play_info(&room_id, FALLBACK_QN).await?,
-                FALLBACK_QN,
+                self.request_play_info(&room_id, bitrate).await?,
+                bitrate,
             )
         };
         ensure_bilibili_success(&play_info, "播放线路")?;
@@ -149,6 +150,8 @@ impl BilibiliClient {
         let line_index = requested_line_index % candidates.len();
         let candidate = &candidates[line_index];
         let quality_label = quality_label(playurl, candidate.current_qn);
+        let quality_options = available_qualities(playurl, candidate.current_qn);
+        let line_options = available_lines(&candidates);
         let transport = if candidate.protocol.eq_ignore_ascii_case("http_hls") {
             "HLS"
         } else {
@@ -169,7 +172,9 @@ impl BilibiliClient {
             line_index,
             line_count: candidates.len(),
             line_name: format!("{} · {transport}", candidate.line_name),
+            line_options,
             quality_label,
+            quality_options,
             bitrate: 0,
             start_position_seconds: 0.0,
             format: candidate.format.clone(),
@@ -514,6 +519,104 @@ fn quality_label(playurl: &Value, current_qn: u32) -> String {
     format!("{description} · QN {current_qn}")
 }
 
+fn available_qualities(playurl: &Value, current_qn: u32) -> Vec<StreamQualityOption> {
+    let mut qualities = playurl
+        .get("g_qn_desc")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(|entry| {
+            let value = value_as_u64(entry.get("qn")).and_then(|value| u32::try_from(value).ok())?;
+            if value == 0 {
+                return None;
+            }
+            let description = string_value(entry.get("desc"));
+            let label = if description.is_empty() {
+                format!("QN {value}")
+            } else {
+                format!("{description} · QN {value}")
+            };
+            Some(StreamQualityOption { value, label })
+        })
+        .collect::<Vec<_>>();
+
+    let accepted_qns = playurl
+        .get("stream")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .flat_map(|stream| {
+            stream
+                .get("format")
+                .and_then(Value::as_array)
+                .into_iter()
+                .flatten()
+        })
+        .flat_map(|format| {
+            format
+                .get("codec")
+                .and_then(Value::as_array)
+                .into_iter()
+                .flatten()
+        })
+        .filter(|codec| string_value(codec.get("codec_name")).eq_ignore_ascii_case("avc"))
+        .flat_map(|codec| {
+            codec
+                .get("accept_qn")
+                .and_then(Value::as_array)
+                .into_iter()
+                .flatten()
+        })
+        .filter_map(|value| value_as_u64(Some(value)))
+        .filter_map(|value| u32::try_from(value).ok())
+        .filter(|value| *value > 0)
+        .collect::<HashSet<_>>();
+    for value in accepted_qns {
+        if qualities.iter().any(|option| option.value == value) {
+            continue;
+        }
+        qualities.push(StreamQualityOption {
+            value,
+            label: quality_label(playurl, value),
+        });
+    }
+
+    if !qualities.iter().any(|option| option.value == current_qn) && current_qn > 0 {
+        qualities.push(StreamQualityOption {
+            value: current_qn,
+            label: quality_label(playurl, current_qn),
+        });
+    }
+    qualities.sort_by(|left, right| right.value.cmp(&left.value));
+    qualities.dedup_by_key(|option| option.value);
+    qualities.insert(
+        0,
+        StreamQualityOption {
+            value: 0,
+            label: "自动 · 最高可用".to_string(),
+        },
+    );
+    qualities
+}
+
+fn available_lines(candidates: &[PlayCandidate]) -> Vec<StreamLineOption> {
+    candidates
+        .iter()
+        .enumerate()
+        .map(|(index, candidate)| {
+            let transport = if candidate.protocol.eq_ignore_ascii_case("http_hls") {
+                "HLS"
+            } else {
+                "FLV"
+            };
+            StreamLineOption {
+                index,
+                label: format!("{} · {transport} · 线路 {}", candidate.line_name, index + 1),
+            }
+        })
+        .collect()
+}
+
 fn string_value(value: Option<&Value>) -> String {
     match value {
         Some(Value::String(value)) => value.trim().to_string(),
@@ -642,6 +745,44 @@ mod tests {
     }
 
     #[test]
+    fn exposes_manual_quality_and_line_choices_from_the_applied_response() {
+        let playurl = json!({
+            "g_qn_desc": [
+                {"qn": 10000, "desc": "原画"},
+                {"qn": 250, "desc": "超清"}
+            ],
+            "stream": [{
+                "protocol_name": "http_stream",
+                "format": [{"format_name": "flv", "codec": [{
+                    "codec_name": "avc",
+                    "current_qn": 10000,
+                    "accept_qn": [10000, 400, 250],
+                    "base_url": "/live/source.flv",
+                    "url_info": [
+                        {"host": "https://first.bilivideo.com", "extra": "?cdn=first"},
+                        {"host": "https://second.bilivideo.com", "extra": "?cdn=second"}
+                    ]
+                }]}]
+            }]
+        });
+
+        let qualities = available_qualities(&playurl, 10_000);
+        assert_eq!(qualities[0].value, 0);
+        assert_eq!(qualities[0].label, "自动 · 最高可用");
+        assert_eq!(
+            qualities.iter().map(|option| option.value).collect::<Vec<_>>(),
+            [0, 10_000, 400, 250]
+        );
+
+        let candidates = extract_play_candidates(&playurl, 10_000).unwrap();
+        let lines = available_lines(&candidates);
+        assert_eq!(lines.len(), 2);
+        assert_eq!(lines[0].index, 0);
+        assert_eq!(lines[0].label, "first · FLV · 线路 1");
+        assert_eq!(lines[1].label, "second · FLV · 线路 2");
+    }
+
+    #[test]
     fn rejects_untrusted_media_hosts() {
         assert!(validated_media_url("https://example.com/live.flv").is_err());
         assert!(validated_media_url("http://cn.bilivideo.com/live.flv").is_err());
@@ -691,7 +832,7 @@ mod tests {
                 .unwrap_or_else(|_| "5050".to_string());
             let _ = client.auth.status(&client.http).await.unwrap();
             let stream = client
-                .resolve(&format!("https://live.bilibili.com/{room}"), 0, 4_000)
+                .resolve(&format!("https://live.bilibili.com/{room}"), 0, 400)
                 .await
                 .unwrap();
             assert!(stream.is_live, "the integration-test room is not live");

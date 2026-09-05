@@ -1,16 +1,21 @@
 import { describe, expect, it } from "vitest";
 import {
   LEGACY_HUYA_SOURCE_STORAGE_KEY,
+  LAST_PLAYED_SOURCE_STORAGE_KEY,
   SOURCE_LIBRARY_STORAGE_KEY,
   activateFavorite,
   activeFavorite,
+  addFavoriteSource,
   addOrActivateSource,
+  deactivateFavorite,
   emptySourceLibrary,
   normalizeLiveSource,
   readSourceLibrary,
+  readLastPlayedSource,
   removeFavorite,
   updateActiveFavoriteMetadata,
   writeSourceLibrary,
+  writeLastPlayedSource,
 } from "./source-library";
 
 function memoryStorage(initial: Record<string, string> = {}): Storage {
@@ -99,14 +104,37 @@ describe("persistent source library", () => {
     expect(activeFavorite(library)?.source).toBe(bilibili.source);
   });
 
-  it("falls back to the next favorite when the active source is removed", () => {
+  it("does not change playback selection when a favorite is removed", () => {
     const huya = normalizeLiveSource("https://huya.com/196645");
     const bilibili = normalizeLiveSource("https://live.bilibili.com/5050");
     if (!huya.ok || !bilibili.ok) throw new Error("test source should normalize");
     let library = addOrActivateSource(emptySourceLibrary(), huya, 1);
     library = addOrActivateSource(library, bilibili, 2);
     library = removeFavorite(library, bilibili.id);
+    expect(activeFavorite(library)).toBeUndefined();
+    expect(library.favorites[0]?.id).toBe(huya.id);
+  });
+
+  it("adds a favorite without making it the playing source", () => {
+    const huya = normalizeLiveSource("https://huya.com/196645");
+    const bilibili = normalizeLiveSource("https://live.bilibili.com/5050");
+    if (!huya.ok || !bilibili.ok) throw new Error("test source should normalize");
+    let library = addOrActivateSource(emptySourceLibrary(), huya, 1);
+    library = addFavoriteSource(library, bilibili, 2);
+    expect(library.favorites).toHaveLength(2);
     expect(activeFavorite(library)?.id).toBe(huya.id);
+    library = deactivateFavorite(library);
+    expect(activeFavorite(library)).toBeUndefined();
+    expect(library.favorites).toHaveLength(2);
+  });
+
+  it("persists the last played source separately from favorites", () => {
+    const storage = memoryStorage();
+    const library = emptySourceLibrary();
+    writeLastPlayedSource(storage, "https://huya.com/196645?from=share");
+    expect(storage.getItem(LAST_PLAYED_SOURCE_STORAGE_KEY)).toBe("https://www.huya.com/196645");
+    expect(readLastPlayedSource(storage, library)?.source).toBe("https://www.huya.com/196645");
+    expect(library.favorites).toHaveLength(0);
   });
 
   it("persists sanitized playback metadata", () => {

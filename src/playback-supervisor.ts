@@ -43,6 +43,8 @@ export interface PlaybackStats {
   title: string;
   avatarUrl: string;
   qualityLabel: string;
+  selectedQualityValue: number;
+  qualityOptions: StreamQualityOption[];
   nominalBitrateKbps: number;
   measuredBitrateKbps: number | null;
   resolution: string;
@@ -51,7 +53,19 @@ export interface PlaybackStats {
   droppedFrames: number | null;
   totalFrames: number | null;
   lineLabel: string;
+  selectedLineIndex: number;
+  lineOptions: StreamLineOption[];
   connectionHealth: string;
+}
+
+export interface StreamQualityOption {
+  value: number;
+  label: string;
+}
+
+export interface StreamLineOption {
+  index: number;
+  label: string;
 }
 
 interface LiveStream {
@@ -68,7 +82,9 @@ interface LiveStream {
   lineIndex: number;
   lineCount: number;
   lineName: string;
+  lineOptions: StreamLineOption[];
   qualityLabel: string;
+  qualityOptions: StreamQualityOption[];
   bitrate: number;
   startPositionSeconds: number;
   format: string;
@@ -93,6 +109,7 @@ export class PlaybackSupervisor {
   private generation = 0;
   private attempt = 0;
   private lineCursor = 0;
+  private requestedQualityValue = 0;
   private connecting = false;
   private userPaused = false;
   private mutedByPolicy = false;
@@ -153,19 +170,10 @@ export class PlaybackSupervisor {
   }
 
   start(source: string): void {
-    this.generation += 1;
     this.source = source;
-    this.attempt = 0;
     this.lineCursor = 0;
-    this.connecting = false;
-    this.userPaused = false;
-    this.mutedByPolicy = false;
-    this.currentStream = undefined;
-    this.resetRecoveryHistory();
-    this.resetStatsSample();
-    this.clearTimers();
-    this.resetMedia();
-    void this.connect(this.generation);
+    this.requestedQualityValue = 0;
+    this.restartCurrentSource();
   }
 
   stop(): void {
@@ -177,7 +185,26 @@ export class PlaybackSupervisor {
     this.resetStatsSample();
     this.clearTimers();
     this.resetMedia();
-    this.emit("idle", "等待直播源", "使用右上角的设置按钮添加直播源收藏");
+    this.emit("idle", "等待直播源", "使用右上角的设置按钮粘贴直播间链接");
+  }
+
+  selectQuality(value: number): void {
+    const stream = this.currentStream;
+    if (!stream || !Number.isInteger(value) || value < 0) return;
+    if (!stream.qualityOptions.some((option) => option.value === value)) return;
+    if (this.requestedQualityValue === value) return;
+    this.requestedQualityValue = value;
+    this.lineCursor = 0;
+    this.restartCurrentSource();
+  }
+
+  selectLine(index: number): void {
+    const stream = this.currentStream;
+    if (!stream || !Number.isInteger(index) || index < 0) return;
+    if (!stream.lineOptions.some((option) => option.index === index)) return;
+    if (stream.lineIndex === index) return;
+    this.lineCursor = index;
+    this.restartCurrentSource();
   }
 
   async togglePause(): Promise<void> {
@@ -251,9 +278,14 @@ export class PlaybackSupervisor {
 
     this.connecting = true;
     this.silentContinuation = silentContinuation;
-    const bitrate = this.preferStableBilibiliQuality || this.attempt >= 3
-      ? FALLBACK_BITRATE_KBPS
-      : SOURCE_QUALITY_BITRATE_KBPS;
+    const automaticFallback = platformLabelForSource(this.source) === "Bilibili"
+      ? 400
+      : FALLBACK_BITRATE_KBPS;
+    const bitrate = this.requestedQualityValue > 0
+      ? this.requestedQualityValue
+      : this.preferStableBilibiliQuality || this.attempt >= 3
+        ? automaticFallback
+        : SOURCE_QUALITY_BITRATE_KBPS;
     const platformLabel = platformLabelForSource(this.source);
     if (!silentContinuation) {
       this.emit("resolving", "正在取得直播信号", `${platformLabel} · H.264 · 最高可用画质`);
@@ -519,7 +551,11 @@ export class PlaybackSupervisor {
     const lineCursor = this.lineCursor;
     this.continuationPrefetchTimer = window.setTimeout(() => {
       this.continuationPrefetchTimer = undefined;
-      const bitrate = this.attempt >= 3 ? FALLBACK_BITRATE_KBPS : SOURCE_QUALITY_BITRATE_KBPS;
+      const bitrate = this.requestedQualityValue > 0
+        ? this.requestedQualityValue
+        : this.attempt >= 3
+          ? FALLBACK_BITRATE_KBPS
+          : SOURCE_QUALITY_BITRATE_KBPS;
       void invoke<LiveStream>("resolve_live_stream", {
         source,
         lineIndex: lineCursor,
@@ -828,6 +864,8 @@ export class PlaybackSupervisor {
       title: stream.title,
       avatarUrl: stream.avatarUrl,
       qualityLabel: stream.qualityLabel,
+      selectedQualityValue: this.requestedQualityValue,
+      qualityOptions: stream.qualityOptions,
       nominalBitrateKbps: stream.bitrate,
       measuredBitrateKbps: playing ? this.measuredBitrateKbps : null,
       resolution: playing && width > 0 && height > 0 ? `${width} × ${height}` : "",
@@ -843,6 +881,8 @@ export class PlaybackSupervisor {
               .filter(Boolean)
               .join(" · ")
           : "",
+      selectedLineIndex: stream.lineIndex,
+      lineOptions: stream.lineOptions,
       connectionHealth: this.connectionHealthLabel(),
     });
 
@@ -863,6 +903,8 @@ export class PlaybackSupervisor {
       title: "",
       avatarUrl: "",
       qualityLabel: "",
+      selectedQualityValue: 0,
+      qualityOptions: [],
       nominalBitrateKbps: 0,
       measuredBitrateKbps: null,
       resolution: "",
@@ -871,6 +913,8 @@ export class PlaybackSupervisor {
       droppedFrames: null,
       totalFrames: null,
       lineLabel: "",
+      selectedLineIndex: 0,
+      lineOptions: [],
       connectionHealth: "",
     });
   }
@@ -917,7 +961,11 @@ export class PlaybackSupervisor {
   }
 
   private scheduleBilibiliStableQuality(): void {
-    if (this.preferStableBilibiliQuality || this.reconnectTimer !== undefined) return;
+    if (
+      this.requestedQualityValue > 0
+      || this.preferStableBilibiliQuality
+      || this.reconnectTimer !== undefined
+    ) return;
     this.preferStableBilibiliQuality = true;
     this.bilibiliQualityFallbackCount += 1;
     this.reconnectCount += 1;
@@ -939,6 +987,21 @@ export class PlaybackSupervisor {
     window.clearTimeout(this.continuationPrefetchTimer);
     this.continuationPrefetchTimer = undefined;
     this.preparedContinuation = undefined;
+  }
+
+  private restartCurrentSource(): void {
+    if (!this.source) return;
+    this.generation += 1;
+    this.attempt = 0;
+    this.connecting = false;
+    this.userPaused = false;
+    this.mutedByPolicy = false;
+    this.currentStream = undefined;
+    this.resetRecoveryHistory();
+    this.resetStatsSample();
+    this.clearTimers();
+    this.resetMedia();
+    void this.connect(this.generation);
   }
 
   private resetStatsSample(): void {

@@ -10,14 +10,17 @@ import {
 } from "./playback-supervisor";
 import {
   activateFavorite,
-  activeFavorite,
-  addOrActivateSource,
+  addFavoriteSource,
+  deactivateFavorite,
   normalizeLiveSource,
+  readLastPlayedSource,
   readSourceLibrary,
   removeFavorite,
   updateActiveFavoriteMetadata,
+  writeLastPlayedSource,
   writeSourceLibrary,
   type FavoriteSource,
+  type NormalizeSourceResult,
 } from "./source-library";
 
 const VOLUME_STORAGE_KEY = "simple-live.volume.v1";
@@ -27,8 +30,12 @@ const VOLUME_COLLAPSE_DELAY_MS = 160;
 const app = element<HTMLElement>("app");
 const video = element<HTMLVideoElement>("live-video");
 const windowDragRegion = element<HTMLElement>("window-drag-region");
+const windowMinimize = element<HTMLButtonElement>("window-minimize");
+const windowMaximize = element<HTMLButtonElement>("window-maximize");
+const windowClose = element<HTMLButtonElement>("window-close");
 const settingsTrigger = element<HTMLButtonElement>("settings-trigger");
 const settingsPanel = element<HTMLElement>("settings-panel");
+const panelTabList = element<HTMLElement>("panel-tabs");
 const panelTabs = Array.from(settingsPanel.querySelectorAll<HTMLButtonElement>("[data-panel-section]"));
 const panelViews = Array.from(settingsPanel.querySelectorAll<HTMLElement>("[data-panel-view]"));
 const sourceForm = element<HTMLFormElement>("source-form");
@@ -36,6 +43,17 @@ const sourceInput = element<HTMLInputElement>("source-input");
 const sourceCopy = element<HTMLButtonElement>("source-copy");
 const copyFeedback = element<HTMLElement>("copy-feedback");
 const sourceError = element<HTMLElement>("source-error");
+const sourceFavorite = element<HTMLButtonElement>("source-favorite");
+const sourceActionStatus = element<HTMLOutputElement>("source-action-status");
+const currentRoom = element<HTMLElement>("current-room");
+const currentRoomAvatar = element<HTMLImageElement>("current-room-avatar");
+const currentRoomAvatarMark = element<HTMLElement>("current-room-avatar-mark");
+const currentRoomState = element<HTMLOutputElement>("current-room-state");
+const currentRoomTitle = element<HTMLElement>("current-room-title");
+const currentRoomAnchor = element<HTMLElement>("current-room-anchor");
+const qualitySelect = element<HTMLSelectElement>("quality-select");
+const lineSelect = element<HTMLSelectElement>("line-select");
+const streamSwitchStatus = element<HTMLOutputElement>("stream-switch-status");
 const favoritesList = element<HTMLElement>("favorites-list");
 const favoritesEmpty = element<HTMLElement>("favorites-empty");
 const favoritesCount = element<HTMLOutputElement>("favorites-count");
@@ -83,8 +101,10 @@ const aboutCopyFeedback = element<HTMLOutputElement>("about-copy-feedback");
 const aboutCopyButtons = Array.from(settingsPanel.querySelectorAll<HTMLButtonElement>("[data-copy-value]"));
 const appWindow = getCurrentWindow();
 const coarsePointer = window.matchMedia("(pointer: coarse)");
+const windowsPlatform = /Windows/u.test(navigator.userAgent);
 
 document.documentElement.dataset.input = coarsePointer.matches ? "touch" : "pointer";
+document.documentElement.dataset.platform = windowsPlatform ? "windows" : "default";
 
 type PanelSection = "settings" | "favorites" | "monitor" | "about";
 
@@ -120,6 +140,10 @@ let qrLoginGeneration = 0;
 let lastBilibiliQn: number | null = null;
 let lastAudibleVolume = readSavedVolume();
 let library = readSourceLibrary(window.localStorage);
+let currentSource: Extract<NormalizeSourceResult, { ok: true }> | null = null;
+let latestPlaybackStats: PlaybackStats | null = null;
+let activePanelSection: PanelSection = "settings";
+let sourceActionTimer: number | undefined;
 
 settingsPanel.inert = true;
 video.volume = lastAudibleVolume;
@@ -127,19 +151,24 @@ video.muted = window.localStorage.getItem(MUTED_STORAGE_KEY) === "true";
 renderVolumeControl();
 
 const supervisor = new PlaybackSupervisor(video, renderPlaybackState, renderPlaybackStats);
+setPanelSection("settings");
 writeSourceLibrary(window.localStorage, library);
 renderFavorites();
 void refreshBilibiliAuthStatus();
-const savedSource = activeFavorite(library)?.source ?? "";
+const savedSource = readLastPlayedSource(window.localStorage, library);
 
 if (savedSource) {
-  sourceInput.value = savedSource;
-  supervisor.start(savedSource);
+  currentSource = savedSource;
+  sourceInput.value = savedSource.source;
+  library = activateMatchingFavorite(library, savedSource.id);
+  persistLibrary();
+  renderCurrentRoomPending(savedSource);
+  supervisor.start(savedSource.source);
 } else {
   renderPlaybackState({
     phase: "idle",
     headline: "等待直播源",
-    detail: "使用右上角的设置按钮添加直播源收藏",
+    detail: "使用右上角的设置按钮粘贴直播间链接",
     mutedByPolicy: false,
   });
   window.setTimeout(() => setSettingsOpen(true), 280);
@@ -155,12 +184,21 @@ favoritesEmptyAdd.addEventListener("click", showSourceSettings);
 aboutCopyButtons.forEach((button) => {
   button.addEventListener("click", () => void copyAboutLink(button));
 });
+windowMinimize.addEventListener("click", () => void appWindow.minimize());
+windowMaximize.addEventListener("click", () => void appWindow.toggleMaximize());
+windowClose.addEventListener("click", () => void appWindow.close());
 windowDragRegion.addEventListener("mousedown", (event) => {
   if (coarsePointer.matches) return;
   if (event.button !== 0) return;
   void appWindow.isFullscreen().then((fullscreen) => {
     if (!fullscreen) void appWindow.startDragging();
   });
+});
+windowDragRegion.addEventListener("dblclick", (event) => {
+  if (!windowsPlatform) return;
+  event.preventDefault();
+  event.stopPropagation();
+  void appWindow.toggleMaximize();
 });
 
 sourceForm.addEventListener("submit", (event) => {
@@ -176,16 +214,14 @@ sourceForm.addEventListener("submit", (event) => {
   sourceError.textContent = "";
   sourceInput.removeAttribute("aria-invalid");
   sourceInput.value = result.source;
-  library = addOrActivateSource(library, result);
-  persistLibrary();
-  renderFavorites();
-  setSettingsOpen(false);
-  supervisor.start(result.source);
+  playSource(result);
 });
 
 sourceInput.addEventListener("input", () => {
   sourceError.textContent = "";
   sourceInput.removeAttribute("aria-invalid");
+  sourceActionStatus.textContent = "";
+  renderSourceFavoriteState();
 });
 sourceInput.addEventListener("paste", (event) => {
   const clipboardText = event.clipboardData?.getData("text");
@@ -204,6 +240,19 @@ sourceCopy.addEventListener("keydown", (event) => {
   event.preventDefault();
   event.stopPropagation();
   void copySourceLink();
+});
+sourceFavorite.addEventListener("click", addSourceToFavorites);
+qualitySelect.addEventListener("change", () => {
+  qualitySelect.disabled = true;
+  lineSelect.disabled = true;
+  streamSwitchStatus.textContent = "正在切换画质…";
+  supervisor.selectQuality(Number(qualitySelect.value));
+});
+lineSelect.addEventListener("change", () => {
+  qualitySelect.disabled = true;
+  lineSelect.disabled = true;
+  streamSwitchStatus.textContent = "正在切换线路…";
+  supervisor.selectLine(Number(lineSelect.value));
 });
 bilibiliLogin.addEventListener("click", () => void startBilibiliQrLogin());
 bilibiliQrRefresh.addEventListener("click", () => void startBilibiliQrLogin());
@@ -236,7 +285,7 @@ app.addEventListener("dblclick", (event) => {
   if (coarsePointer.matches) return;
   const target = event.target;
   if (!(target instanceof Element)) return;
-  if (target.closest("button, input, .settings-panel")) return;
+  if (target.closest("button, input, select, .settings-panel, .window-drag-region, .window-controls")) return;
   event.preventDefault();
   event.stopPropagation();
   void toggleFullscreen();
@@ -285,6 +334,13 @@ function renderPlaybackState(state: PlaybackViewState): void {
   statusTitle.textContent = state.headline;
   statusDetail.textContent = state.detail;
   soundUnlock.hidden = !state.mutedByPolicy;
+  if (currentSource && ["resolving", "connecting", "recovering"].includes(state.phase)) {
+    currentRoom.hidden = false;
+    currentRoomState.dataset.state = "connecting";
+    currentRoomState.textContent = state.phase === "recovering" ? "正在恢复" : "正在连接";
+    qualitySelect.disabled = true;
+    lineSelect.disabled = true;
+  }
   window.clearTimeout(statusHideTimer);
   playbackStatus.classList.add("is-visible");
 
@@ -298,6 +354,7 @@ function renderPlaybackState(state: PlaybackViewState): void {
 }
 
 function renderPlaybackStats(stats: PlaybackStats): void {
+  latestPlaybackStats = stats.active ? stats : null;
   streamInspector.hidden = !stats.active;
   monitorEmpty.hidden = stats.active;
   monitorHeading.dataset.state = stats.active && (stats.live || stats.replay) ? "active" : "idle";
@@ -309,7 +366,12 @@ function renderPlaybackStats(stats: PlaybackStats): void {
         : "等待开播"
     : "等待播放";
   setAvatar(statusAvatar, stats.avatarUrl);
-  if (!stats.active) return;
+  if (!stats.active) {
+    if (currentSource) renderCurrentRoomPending(currentSource);
+    return;
+  }
+
+  renderCurrentRoomStats(stats);
 
   if (stats.platform === "bilibili") {
     const qn = /\bQN\s+(\d+)\b/u.exec(stats.qualityLabel)?.[1];
@@ -353,7 +415,72 @@ function renderPlaybackStats(stats: PlaybackStats): void {
     library = nextLibrary;
     persistLibrary();
     renderFavorites();
+    renderSourceFavoriteState();
   }
+}
+
+function renderCurrentRoomPending(source: Extract<NormalizeSourceResult, { ok: true }>): void {
+  currentRoom.hidden = false;
+  currentRoomState.dataset.state = "connecting";
+  currentRoomState.textContent = "正在连接";
+  currentRoomTitle.textContent = `${source.platformLabel} 直播间 ${source.roomId}`;
+  currentRoomAnchor.textContent = "正在读取标题与主播信息";
+  setAvatar(currentRoomAvatar, "");
+  currentRoomAvatarMark.hidden = false;
+  qualitySelect.disabled = true;
+  lineSelect.disabled = true;
+  streamSwitchStatus.textContent = "";
+}
+
+function renderCurrentRoomStats(stats: PlaybackStats): void {
+  currentRoom.hidden = false;
+  const state = stats.live ? "live" : stats.replay ? "replay" : "offline";
+  currentRoomState.dataset.state = state;
+  currentRoomState.textContent = stats.live ? "直播中" : stats.replay ? "回放" : "未开播";
+  currentRoomTitle.textContent = stats.title || `${stats.platformLabel} 直播间 ${stats.roomId}`;
+  currentRoomAnchor.textContent = stats.anchor
+    ? `${stats.anchor} · ${stats.platformLabel}`
+    : `${stats.platformLabel} · 房间 ${stats.roomId}`;
+  setAvatar(currentRoomAvatar, stats.avatarUrl);
+  currentRoomAvatarMark.hidden = Boolean(stats.avatarUrl);
+
+  updateSelectOptions(
+    qualitySelect,
+    stats.qualityOptions.map((option) => ({ value: option.value, label: option.label })),
+    stats.selectedQualityValue,
+  );
+  updateSelectOptions(
+    lineSelect,
+    stats.lineOptions.map((option) => ({ value: option.index, label: option.label })),
+    stats.selectedLineIndex,
+  );
+  const selectable = stats.live && !stats.replay;
+  qualitySelect.disabled = !selectable || stats.qualityOptions.length <= 1;
+  lineSelect.disabled = !selectable || stats.lineOptions.length <= 1;
+  streamSwitchStatus.textContent = selectable
+    ? [stats.qualityLabel, stats.lineLabel].filter(Boolean).join(" · ")
+    : stats.replay
+      ? "回放使用平台提供的固定画质与线路"
+      : "开播后可以切换画质和线路";
+}
+
+function updateSelectOptions(
+  select: HTMLSelectElement,
+  options: Array<{ value: number; label: string }>,
+  selected: number,
+): void {
+  const signature = options.map((option) => `${option.value}:${option.label}`).join("|");
+  if (select.dataset.options !== signature) {
+    select.replaceChildren(...options.map((option) => {
+      const element = document.createElement("option");
+      element.value = String(option.value);
+      element.textContent = option.label;
+      return element;
+    }));
+    select.dataset.options = signature;
+  }
+  select.value = String(selected);
+  if (select.selectedIndex < 0 && select.options.length > 0) select.selectedIndex = 0;
 }
 
 function renderFavorites(): void {
@@ -362,6 +489,78 @@ function renderFavorites(): void {
   favoritesEmpty.hidden = library.favorites.length > 0;
   const rows = library.favorites.map((favorite) => createFavoriteRow(favorite));
   favoritesList.replaceChildren(...rows);
+  renderSourceFavoriteState();
+}
+
+function playSource(source: Extract<NormalizeSourceResult, { ok: true }>): void {
+  currentSource = source;
+  latestPlaybackStats = null;
+  lastBilibiliQn = null;
+  library = activateMatchingFavorite(library, source.id);
+  persistLibrary();
+  writeLastPlayedSource(window.localStorage, source.source);
+  renderFavorites();
+  renderCurrentRoomPending(source);
+  setSettingsOpen(false);
+  supervisor.start(source.source);
+}
+
+function addSourceToFavorites(): void {
+  const normalized = normalizeLiveSource(sourceInput.value);
+  if (!normalized.ok) {
+    sourceError.textContent = normalized.message;
+    sourceInput.setAttribute("aria-invalid", "true");
+    sourceInput.focus();
+    return;
+  }
+
+  const existed = library.favorites.some((favorite) => favorite.id === normalized.id);
+  library = addFavoriteSource(library, normalized);
+  if (currentSource?.id === normalized.id) {
+    library = activateFavorite(library, normalized.id);
+    const stats = latestPlaybackStats;
+    if (stats?.active) {
+      library = updateActiveFavoriteMetadata(library, {
+        platform: stats.platform,
+        platformLabel: stats.platformLabel,
+        roomId: stats.roomId,
+        anchor: stats.anchor,
+        title: stats.title,
+        avatarUrl: stats.avatarUrl,
+      });
+    }
+  }
+  persistLibrary();
+  renderFavorites();
+  showSourceAction(existed ? "这个直播间已经在收藏中" : "已加入收藏");
+}
+
+function activateMatchingFavorite(
+  state: typeof library,
+  id: string,
+): typeof library {
+  return state.favorites.some((favorite) => favorite.id === id)
+    ? activateFavorite(state, id)
+    : deactivateFavorite(state);
+}
+
+function renderSourceFavoriteState(): void {
+  const normalized = normalizeLiveSource(sourceInput.value);
+  const saved = normalized.ok && library.favorites.some((favorite) => favorite.id === normalized.id);
+  sourceFavorite.classList.toggle("is-saved", saved);
+  sourceFavorite.setAttribute("aria-pressed", String(saved));
+  const label = sourceFavorite.querySelector("span");
+  if (label) label.textContent = saved ? "已收藏" : "收藏";
+  sourceFavorite.title = saved ? "已在收藏列表中" : "加入收藏列表";
+}
+
+function showSourceAction(message: string): void {
+  window.clearTimeout(sourceActionTimer);
+  sourceActionStatus.textContent = message;
+  sourceActionTimer = window.setTimeout(() => {
+    sourceActionStatus.textContent = "";
+    sourceActionTimer = undefined;
+  }, 2_200);
 }
 
 function createFavoriteRow(favorite: FavoriteSource): HTMLElement {
@@ -434,32 +633,18 @@ function createFavoriteRow(favorite: FavoriteSource): HTMLElement {
 function selectFavorite(id: string): void {
   const selected = library.favorites.find((favorite) => favorite.id === id);
   if (!selected) return;
-  library = activateFavorite(library, id);
-  persistLibrary();
-  renderFavorites();
-  sourceInput.value = selected.source;
+  const normalized = normalizeLiveSource(selected.source);
+  if (!normalized.ok) return;
+  sourceInput.value = normalized.source;
   sourceError.textContent = "";
   sourceInput.removeAttribute("aria-invalid");
-  setSettingsOpen(false);
-  supervisor.start(selected.source);
+  playSource(normalized);
 }
 
 function deleteFavorite(id: string): void {
-  const wasActive = library.activeId === id;
   library = removeFavorite(library, id);
   persistLibrary();
   renderFavorites();
-  if (!wasActive) return;
-
-  const next = activeFavorite(library);
-  if (next) {
-    sourceInput.value = next.source;
-    supervisor.start(next.source);
-    return;
-  }
-  sourceInput.value = "";
-  supervisor.stop();
-  setSettingsOpen(true);
 }
 
 function persistLibrary(): void {
@@ -600,19 +785,17 @@ function cancelBilibiliQrPolling(): void {
 }
 
 function restartActiveBilibiliSource(): void {
-  const favorite = activeFavorite(library);
-  if (favorite?.platform === "bilibili") supervisor.start(favorite.source);
+  if (currentSource?.platform === "bilibili") supervisor.start(currentSource.source);
 }
 
 function maybeUpgradeActiveBilibiliAfterAuth(attempt = 0): void {
-  const favorite = activeFavorite(library);
-  if (favorite?.platform !== "bilibili") return;
+  if (currentSource?.platform !== "bilibili") return;
   if (lastBilibiliQn !== null) {
-    if (lastBilibiliQn < 10_000) supervisor.start(favorite.source);
+    if (lastBilibiliQn < 10_000) supervisor.start(currentSource.source);
     return;
   }
   if (attempt >= 4) {
-    supervisor.start(favorite.source);
+    supervisor.start(currentSource.source);
     return;
   }
   window.setTimeout(() => maybeUpgradeActiveBilibiliAfterAuth(attempt + 1), 500);
@@ -745,6 +928,11 @@ function setSettingsOpen(open: boolean): void {
 }
 
 function setPanelSection(section: PanelSection, focusTab = false): void {
+  const nextIndex = panelTabs.findIndex((tab) => panelSectionOf(tab) === section);
+  const previousIndex = panelTabs.findIndex((tab) => panelSectionOf(tab) === activePanelSection);
+  activePanelSection = section;
+  panelTabList.style.setProperty("--active-tab-index", String(Math.max(0, nextIndex)));
+  panelTabList.dataset.direction = nextIndex >= previousIndex ? "forward" : "backward";
   panelTabs.forEach((tab) => {
     const active = panelSectionOf(tab) === section;
     tab.classList.toggle("is-active", active);
@@ -752,10 +940,12 @@ function setPanelSection(section: PanelSection, focusTab = false): void {
     tab.tabIndex = active ? 0 : -1;
     if (active && focusTab) tab.focus();
   });
-  panelViews.forEach((view) => {
+  panelViews.forEach((view, index) => {
     const active = view.dataset.panelView === section;
     view.classList.toggle("is-active", active);
-    view.hidden = !active;
+    view.dataset.panelPosition = active ? "active" : index < nextIndex ? "before" : "after";
+    view.setAttribute("aria-hidden", String(!active));
+    view.inert = !active;
   });
   supervisor.setStatsInspectionActive(settingsOpen && section === "monitor");
 }
@@ -800,7 +990,7 @@ function eyebrowFor(phase: PlaybackPhase): string {
     case "error":
       return "WAITING";
     default:
-      return "SIMPLE LIVE";
+      return "QILIU";
   }
 }
 
@@ -870,11 +1060,13 @@ function applyPastedSource(value: string): void {
     sourceInput.value = value.trim();
     sourceError.textContent = normalized.message;
     sourceInput.setAttribute("aria-invalid", "true");
+    renderSourceFavoriteState();
     return;
   }
   sourceInput.value = normalized.source;
   sourceError.textContent = "";
   sourceInput.removeAttribute("aria-invalid");
+  renderSourceFavoriteState();
 }
 
 function isPrimaryShortcut(event: KeyboardEvent, key: string): boolean {
