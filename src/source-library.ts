@@ -5,7 +5,7 @@ export const LAST_PLAYED_SOURCE_STORAGE_KEY = "simple-live.last-source.v1";
 const SOURCE_LIBRARY_VERSION = 1;
 const MAX_FAVORITES = 50;
 
-export type LivePlatform = "huya" | "bilibili";
+export type LivePlatform = "huya" | "bilibili" | "douyu" | "douyin";
 
 export interface FavoriteSource {
   id: string;
@@ -96,11 +96,11 @@ export function writeLastPlayedSource(
 
 export function normalizeLiveSource(value: string): NormalizeSourceResult {
   const cleaned = value.replace(/[\u200B-\u200D\u2060\uFEFF]/gu, "").trim();
-  if (!cleaned) return { ok: false, message: "请输入虎牙或 Bilibili 直播间链接" };
+  if (!cleaned) return { ok: false, message: "请输入虎牙、Bilibili、斗鱼或抖音直播间链接" };
 
   let failure: NormalizeSourceResult = {
     ok: false,
-    message: "粘贴内容中没有可识别的虎牙或 Bilibili 直播间链接",
+    message: "粘贴内容中没有可识别的虎牙、Bilibili、斗鱼或抖音直播间链接",
   };
   for (const candidate of liveSourceCandidates(cleaned)) {
     const normalized = normalizeLiveSourceCandidate(candidate);
@@ -138,6 +138,21 @@ function normalizeLiveSourceCandidate(candidate: string): NormalizeSourceResult 
       };
     }
 
+    if (["douyu.com", "www.douyu.com", "m.douyu.com"].includes(host)) {
+      const roomId = url.searchParams.get("rid") || url.pathname.split("/").filter(Boolean)[0] || "";
+      if (url.port || !/^[a-zA-Z0-9_-]{1,64}$/.test(roomId) || ["topic", "directory"].includes(roomId)) {
+        return { ok: false, message: "链接中没有有效的斗鱼房间号" };
+      }
+      return { ok: true, source: `https://www.douyu.com/${roomId}`, id: `douyu:${roomId.toLowerCase()}`, roomId, platform: "douyu", platformLabel: "斗鱼" };
+    }
+    if (host === "live.douyin.com" || host === "v.douyin.com") {
+      const roomId = url.pathname.split("/").filter(Boolean)[0] || "";
+      const valid = host === "v.douyin.com" ? /^[a-zA-Z0-9_-]{1,64}$/.test(roomId) : /^\d{1,20}$/.test(roomId);
+      if (url.port || !valid) return { ok: false, message: "请粘贴抖音直播间链接或分享短链接" };
+      const short = host === "v.douyin.com";
+      return { ok: true, source: `https://${host}/${roomId}${short ? "/" : ""}`, id: `douyin:${short ? "share:" : ""}${roomId}`, roomId, platform: "douyin", platformLabel: "抖音" };
+    }
+
     if (host === "live.bilibili.com" || host.endsWith(".live.bilibili.com")) {
       const roomId = url.pathname.split("/").filter(Boolean)[0] ?? "";
       return normalizeBilibiliRoom(roomId);
@@ -145,7 +160,7 @@ function normalizeLiveSourceCandidate(candidate: string): NormalizeSourceResult 
     if (host === "bilibili.com" || host.endsWith(".bilibili.com")) {
       return normalizeBilibiliRoom(url.searchParams.get("cid") ?? "");
     }
-    return { ok: false, message: "目前只支持虎牙和 Bilibili 直播间链接" };
+    return { ok: false, message: "目前支持虎牙、Bilibili、斗鱼和抖音直播间链接" };
   } catch {
     return { ok: false, message: "直播间链接格式不正确" };
   }
@@ -153,7 +168,7 @@ function normalizeLiveSourceCandidate(candidate: string): NormalizeSourceResult 
 
 function liveSourceCandidates(value: string): string[] {
   const candidates = [value];
-  const pattern = /(?:^|[^\w.-])((?:https?:\/\/)?(?:[a-z0-9-]+\.)*(?:huya\.com|bilibili\.com)(?:[/?#][^\s<>"'`，。；！？]*)?)/giu;
+  const pattern = /(?:^|[^\w.@-])((?:https?:\/\/)?(?:[a-z0-9-]+\.)*(?:huya\.com|bilibili\.com|douyu\.com|douyin\.com)(?:[/?#][^\s<>"'`，。；！？]*)?)/giu;
   for (const match of value.matchAll(pattern)) {
     if (match[1]) candidates.push(match[1]);
   }
@@ -271,7 +286,7 @@ export function updateActiveFavoriteMetadata(
       avatarUrl: safeMetadata(metadata.avatarUrl),
       platformLabel: safeMetadata(metadata.platformLabel) || favorite.platformLabel,
     };
-    const platform = metadata.platform === "huya" || metadata.platform === "bilibili"
+    const platform = metadata.platform === "huya" || metadata.platform === "bilibili" || metadata.platform === "douyu" || metadata.platform === "douyin"
       ? metadata.platform
       : favorite.platform;
     next.platform = platform;

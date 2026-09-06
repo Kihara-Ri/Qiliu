@@ -68,6 +68,19 @@ impl BilibiliClient {
         })
     }
 
+    pub async fn is_live(&self, source: &str) -> Result<bool, String> {
+        let room_id = parse_room_id(source)?;
+        let payload = self.get_public_json(
+            BILIBILI_ROOM_INFO_API, &[("room_id", room_id.as_str())],
+        ).await?;
+        ensure_bilibili_success(&payload, "房间资料")?;
+        match value_as_i64(payload.pointer("/data/live_status")) {
+            Some(1) => Ok(true),
+            Some(0 | 2) => Ok(false),
+            _ => Err("Bilibili 房间直播状态未知".to_string()),
+        }
+    }
+
     pub async fn resolve(
         &self,
         source: &str,
@@ -520,25 +533,8 @@ fn quality_label(playurl: &Value, current_qn: u32) -> String {
 }
 
 fn available_qualities(playurl: &Value, current_qn: u32) -> Vec<StreamQualityOption> {
-    let mut qualities = playurl
-        .get("g_qn_desc")
-        .and_then(Value::as_array)
-        .into_iter()
-        .flatten()
-        .filter_map(|entry| {
-            let value = value_as_u64(entry.get("qn")).and_then(|value| u32::try_from(value).ok())?;
-            if value == 0 {
-                return None;
-            }
-            let description = string_value(entry.get("desc"));
-            let label = if description.is_empty() {
-                format!("QN {value}")
-            } else {
-                format!("{description} · QN {value}")
-            };
-            Some(StreamQualityOption { value, label })
-        })
-        .collect::<Vec<_>>();
+    // g_qn_desc is a platform-wide label dictionary, not room availability.
+    let mut qualities: Vec<StreamQualityOption> = Vec::new();
 
     let accepted_qns = playurl
         .get("stream")
@@ -748,6 +744,8 @@ mod tests {
     fn exposes_manual_quality_and_line_choices_from_the_applied_response() {
         let playurl = json!({
             "g_qn_desc": [
+                {"qn": 30000, "desc": "杜比"},
+                {"qn": 20000, "desc": "4K"},
                 {"qn": 10000, "desc": "原画"},
                 {"qn": 250, "desc": "超清"}
             ],
@@ -946,6 +944,7 @@ mod tests {
     #[test]
     #[ignore = "measures chunk gaps on current Bilibili FLV lines"]
     fn measures_current_bilibili_flv_chunk_gaps() {
+        crate::initialize_secure_store().unwrap();
         tauri::async_runtime::block_on(async {
             let client = BilibiliClient::new().unwrap();
             let room = std::env::var("SIMPLE_LIVE_BILIBILI_TEST_ROOM")

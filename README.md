@@ -7,7 +7,7 @@
 栖流是一款面向 macOS、Windows 与 Android 的轻量直播播放器。它只保留观看所必需的内容：打开应用自动播放、一个按需出现的设置层、直播收藏和音量控制。
 
 当前版本：**1.2.0**
-支持来源：**虎牙、Bilibili**
+支持来源：**虎牙、Bilibili、斗鱼、抖音**
 技术栈：**Tauri 2、Rust、TypeScript、mpegts.js、HLS.js**
 
 ## 它解决什么问题
@@ -26,7 +26,7 @@
 ## 使用体验
 
 - 记住最后播放的直播间，启动后直接播放。
-- 收藏多个虎牙或 Bilibili 直播间，但同一时间只播放一路。
+- 收藏多个虎牙、Bilibili、斗鱼或抖音直播间，但同一时间只播放一路。
 - 获取主播名称、头像和直播状态。
 - “立即播放”和“收藏”是两个独立动作；换源不会自动扩充收藏列表。
 - 在设置页查看当前直播间，并手动选择平台实际返回的画质与线路。
@@ -91,7 +91,7 @@ Rust 平台解析器
 
 1. 从本仓库的 **Releases** 页面下载最新的 `Qiliu-x.y.z-macOS.dmg`。
 2. 打开 DMG，将“栖流”拖入 `Applications`。
-3. 首次启动时粘贴虎牙或 Bilibili 直播间链接并点击“立即播放”；需要保留时再单独收藏。
+3. 首次启动时粘贴虎牙、Bilibili、斗鱼或抖音直播间链接并点击“立即播放”；需要保留时再单独收藏。
 
 当前公开构建使用本地 ad-hoc 签名，尚未经过 Apple 公证。如果 macOS 阻止首次启动，请在 Finder 中右键应用并选择“打开”，确认应用来源后再启动。
 
@@ -217,7 +217,7 @@ docs/
 
 ## 已知边界
 
-- 当前只解析虎牙和 Bilibili，不支持弹幕、礼物、搜索或平台推荐。
+- 当前解析虎牙、Bilibili、斗鱼和抖音，不支持弹幕、礼物、搜索或平台推荐。
 - Bilibili 的最高可用档位由账号权限、主播推流和平台策略共同决定；登录并不保证所有房间都提供相同画质。
 - 自动恢复可以减少短暂中断，但无法消除主播推流故障、平台服务异常或本地网络中断。
 - 自动化构建通过不等于真实设备长时间播放通过；Windows 和 Android 仍需分别完成直播、回放、扫码登录、休眠恢复和弱网验收。
@@ -234,3 +234,24 @@ docs/
 虎牙、Bilibili 解析和长时间播放策略参考了 [liuchuancong/pure_live](https://github.com/liuchuancong/pure_live) 的公开实现，并重新收敛为单窗口、单路播放、无弹幕的 Tauri 架构。FLV 解复用使用 Apache-2.0 的 [mpegts.js](https://github.com/xqq/mpegts.js)。
 
 本项目以 [AGPL-3.0-only](LICENSE) 发布。第三方依赖许可见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
+
+
+### 斗鱼与抖音直播源
+
+支持斗鱼数字房间、房间别名及带 `rid` 的活动链接；抖音支持 `live.douyin.com` 房间链接及 `v.douyin.com` 分享短链接。链接可直接播放或加入本机收藏，收藏列表复用直播状态查询。短链接若跳转到不提供直播房间资料的页面，会提示使用直播间直链。
+
+斗鱼从房间接口读取开播状态，在应用内执行官方动态签名脚本，再请求 H5 播放地址；画质和 CDN 线路以平台返回值为准。抖音使用匿名访客 Cookie、a_bogus 签名接口及页面 roomStore 备用解析，提取 H.264 FLV/HLS 画质。无需安装 Python 或 Node.js，也不内置参考项目中的账号 Cookie。平台验证、地区限制、付费权限或接口变更仍可能导致解析失败；此时不会显示为未开播。
+
+实现参考 [DouyinLiveRecorder](https://github.com/ihmily/DouyinLiveRecorder) 的 `src/spider.py`、`src/stream.py` 和 `src/ab_sign.py`，许可证见 [第三方声明](THIRD_PARTY_NOTICES.md)。新增模块为 `douyu.rs`、`douyin.rs`、`douyin_sign.rs` 和 `live_source.rs`。
+
+手动网络验收（默认测试不会访问真实直播平台）：
+
+```bash
+QILIU_LIVE_PROBE=https://www.douyu.com/9999 cargo test --manifest-path src-tauri/Cargo.toml probe_live_source -- --ignored --nocapture
+QILIU_LIVE_PROBE=https://live.douyin.com/房间号 cargo test --manifest-path src-tauri/Cargo.toml probe_live_source -- --ignored --nocapture
+```
+
+该检查验证解析与媒体首段数据；客户端画面、声音、画质切换和长时间播放仍需在对应系统实际验收。
+
+
+2026-09-05 验证：完整 `npm run check` 通过（31 项前端测试、32 项 Rust 测试，真实网络测试默认跳过）。斗鱼房间 `9999` 已取得原画 2K60 FLV 并收到媒体数据；抖音房间 `216681844390` 已取得原画 FLV 和超清 HLS，媒体响应允许跨域。抖音未开播房间的状态也已验证。以上为接口与媒体读取验证，尚未完成 Windows、Android 和客户端长时间视听验收。

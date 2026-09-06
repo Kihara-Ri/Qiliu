@@ -27,15 +27,15 @@
       }
     ],
     "security": {
-      "csp": "default-src 'self' customprotocol: asset:; connect-src 'self' ipc: http://ipc.localhost https://*.huya.com https://huya.com https://*.bilibili.com https://bilibili.com https://*.bilivideo.com https://bilivideo.com; worker-src 'self' blob:; img-src 'self' asset: http://asset.localhost data: https://huyaimg.msstatic.com https://*.hdslb.com https://hdslb.com; media-src 'self' https://*.huya.com https://huya.com https://*.bilivideo.com https://bilivideo.com https://*.bilibili.com https://bilibili.com blob:; style-src 'self'; font-src 'self'; object-src 'none'; frame-src 'none'; base-uri 'none'; form-action 'none'"
+      "csp": "default-src 'self' customprotocol: asset:; connect-src 'self' ipc: http://ipc.localhost https://*.huya.com https://huya.com https://*.bilibili.com https://bilibili.com https://*.bilivideo.com https://bilivideo.com https://*.douyucdn.cn https://douyucdn.cn https://*.douyucdn2.cn https://douyucdn2.cn https://*.douyucdn3.cn https://douyucdn3.cn https://*.douyucdn4.cn https://douyucdn4.cn https://*.douyucdn5.cn https://douyucdn5.cn https://*.douyucdn6.cn https://douyucdn6.cn https://*.douyu.com https://douyu.com https://*.douyincdn.com https://douyincdn.com https://*.bytecdn.cn https://bytecdn.cn https://*.byteimg.com https://byteimg.com https://*.bytedance.com https://bytedance.com https://*.pstatp.com https://pstatp.com https://*.amemv.com https://amemv.com https://*.douyin.com https://douyin.com; worker-src 'self' blob:; img-src 'self' asset: http://asset.localhost data: https://huyaimg.msstatic.com https://*.hdslb.com https://hdslb.com https://*.douyucdn.cn https://*.douyucdn2.cn https://*.douyinpic.com https://*.byteimg.com https://*.douyincdn.com https://*.pstatp.com; media-src 'self' https://*.huya.com https://huya.com https://*.bilivideo.com https://bilivideo.com https://*.bilibili.com https://bilibili.com blob: https://*.douyucdn.cn https://douyucdn.cn https://*.douyucdn2.cn https://douyucdn2.cn https://*.douyucdn3.cn https://douyucdn3.cn https://*.douyucdn4.cn https://douyucdn4.cn https://*.douyucdn5.cn https://douyucdn5.cn https://*.douyucdn6.cn https://douyucdn6.cn https://*.douyu.com https://douyu.com https://*.douyincdn.com https://douyincdn.com https://*.bytecdn.cn https://bytecdn.cn https://*.byteimg.com https://byteimg.com https://*.bytedance.com https://bytedance.com https://*.pstatp.com https://pstatp.com https://*.amemv.com https://amemv.com https://*.douyin.com https://douyin.com; style-src 'self'; font-src 'self'; object-src 'none'; frame-src 'none'; base-uri 'none'; form-action 'none'"
     }
   },
   "bundle": {
     "active": true,
     "targets": "all",
     "category": "Entertainment",
-    "shortDescription": "安静观看你关注的虎牙与 Bilibili 直播",
-    "longDescription": "栖流是一款支持虎牙、Bilibili 与本地直播收藏的轻量桌面播放器。",
+    "shortDescription": "安静观看你关注的虎牙、Bilibili、斗鱼与抖音直播",
+    "longDescription": "栖流是一款支持虎牙、Bilibili、斗鱼、抖音与本地直播收藏的轻量播放器。",
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",

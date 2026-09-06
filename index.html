@@ -112,7 +112,7 @@
                   inputmode="url"
                   autocomplete="off"
                   spellcheck="false"
-                  placeholder="粘贴虎牙或 Bilibili 链接"
+                  placeholder="粘贴虎牙、Bilibili、斗鱼或抖音链接"
                   required
                 />
                 <button
@@ -151,8 +151,8 @@
                 </div>
               </div>
               <div class="stream-preferences">
-                <label for="quality-select"><span>画质</span><select id="quality-select" disabled></select></label>
-                <label for="line-select"><span>线路</span><select id="line-select" disabled></select></label>
+                <label for="quality-select"><span>画质</span><button type="button" id="quality-select" class="stream-select" disabled aria-label="画质">等待播放</button></label>
+                <label for="line-select"><span>线路</span><button type="button" id="line-select" class="stream-select" disabled aria-label="线路">等待播放</button></label>
               </div>
               <output class="stream-switch-status" id="stream-switch-status" aria-live="polite"></output>
             </section>

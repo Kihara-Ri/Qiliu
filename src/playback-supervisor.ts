@@ -1,3 +1,4 @@
+import { normalizeLiveSource } from "./source-library";
 import { invoke } from "@tauri-apps/api/core";
 import Hls, {
   ErrorDetails,
@@ -32,6 +33,7 @@ export interface PlaybackViewState {
 }
 
 export interface PlaybackStats {
+  connecting: boolean;
   active: boolean;
   live: boolean;
   replay: boolean;
@@ -280,7 +282,7 @@ export class PlaybackSupervisor {
     this.silentContinuation = silentContinuation;
     const automaticFallback = platformLabelForSource(this.source) === "Bilibili"
       ? 400
-      : FALLBACK_BITRATE_KBPS;
+      : platformLabelForSource(this.source) === "虎牙" ? FALLBACK_BITRATE_KBPS : 0;
     const bitrate = this.requestedQualityValue > 0
       ? this.requestedQualityValue
       : this.preferStableBilibiliQuality || this.attempt >= 3
@@ -449,11 +451,10 @@ export class PlaybackSupervisor {
           // behind while the network itself is still healthy.
           enableWorker: isBilibiliLive,
           enableStashBuffer: true,
-          // Keep a small jitter cushion without delaying the first frame with
-          // a large startup stash.
-          // Give Bilibili roughly a few seconds of startup cushion. Huya keeps
-          // the smaller value for fast same-line continuation at natural EOF.
-          stashInitialSize: (isBilibiliLive ? 1_024 : 256) * 1_024,
+          // Use the library's 64 KB initial stash for Bilibili; it adapts to
+          // measured throughput. A fixed 1 MB startup stash delays low-bitrate
+          // streams and is not a media buffer measured in seconds.
+          stashInitialSize: (isBilibiliLive ? 64 : 256) * 1_024,
           lazyLoad: false,
           autoCleanupSourceBuffer: true,
           // Use mpegts.js' conservative live defaults. Keeping only 15 seconds
@@ -613,6 +614,7 @@ export class PlaybackSupervisor {
     }, STABLE_RESET_MS);
     this.scheduleHuyaContinuationPrefetch();
     if (!this.silentContinuation) this.emitPlayingState();
+    this.collectStats();
   };
 
   private emitPlayingState(): void {
@@ -810,7 +812,7 @@ export class PlaybackSupervisor {
     const now = performance.now();
     const live = stream.isLive && Boolean(stream.url);
     const replay = stream.isReplay && Boolean(stream.url);
-    const playing = live || replay;
+    const playing = (live || replay) && !this.connecting;
     const elapsedMs = Math.max(now - this.lastStatsAt, 1);
     const quality = this.video.getVideoPlaybackQuality?.();
     const webkitQuality = this.video as HTMLVideoElement & {
@@ -853,6 +855,7 @@ export class PlaybackSupervisor {
       this.scheduleBilibiliStableQuality();
     }
     this.onStats({
+      connecting: this.connecting,
       active: true,
       live,
       replay,
@@ -892,6 +895,7 @@ export class PlaybackSupervisor {
 
   private emitEmptyStats(): void {
     this.onStats({
+      connecting: this.connecting,
       active: false,
       live: false,
       replay: false,
@@ -1002,6 +1006,7 @@ export class PlaybackSupervisor {
     this.clearTimers();
     this.resetMedia();
     void this.connect(this.generation);
+    this.emitEmptyStats();
   }
 
   private resetStatsSample(): void {
@@ -1121,7 +1126,8 @@ function errorMessage(error: unknown): string {
 function platformLabelForSource(source: string): string {
   try {
     const url = new URL(source.includes("://") ? source : `https://${source}`);
-    return url.hostname.toLowerCase().endsWith("bilibili.com") ? "Bilibili" : "虎牙";
+    const normalized = normalizeLiveSource(url.href);
+    return normalized.ok ? normalized.platformLabel : "直播";
   } catch {
     return "直播平台";
   }

@@ -53,6 +53,7 @@ jobs:
           version="${GITHUB_REF_NAME#v}"
           mkdir -p release-assets
           dmg="$(find src-tauri/target/release/bundle/dmg -type f -name '*.dmg' | head -n 1)"
+          hdiutil verify "$dmg"
           cp "$dmg" "release-assets/Qiliu-$version-macOS-${RUNNER_ARCH}.dmg"
 
       - name: Collect Windows installer
@@ -153,6 +154,9 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
       - name: Download installers
         uses: actions/download-artifact@v4
         with:
@@ -165,7 +169,12 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
+          version="${GITHUB_REF_NAME#v}"
+          awk -v version="$version" '
+            /^## / { if (found) exit; if ($2 == version) { found=1; next } }
+            found { print }
+          ' CHANGELOG.md > release-notes.md
           if ! gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --title "栖流 ${GITHUB_REF_NAME#v}" --generate-notes
+            gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --title "栖流 ${GITHUB_REF_NAME#v}" --notes-file release-notes.md
           fi
           gh release upload "$GITHUB_REF_NAME" release-assets/* --repo "$GITHUB_REPOSITORY" --clobber

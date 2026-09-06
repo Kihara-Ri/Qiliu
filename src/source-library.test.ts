@@ -155,3 +155,35 @@ describe("persistent source library", () => {
     expect(activeFavorite(readSourceLibrary(storage))?.anchor).toBe("主播");
   });
 });
+
+describe("Douyu and Douyin sources", () => {
+  it.each([
+    ["https://m.douyu.com/9999?dyshid=tracking", "douyu:9999", "https://www.douyu.com/9999"],
+    ["https://www.douyu.com/topic/event?rid=4921614", "douyu:4921614", "https://www.douyu.com/4921614"],
+    ["来看直播 https://live.douyin.com/123456789，正在直播", "douyin:123456789", "https://live.douyin.com/123456789"],
+    ["分享直播：https://v.douyin.com/AbCd12/ 复制打开", "douyin:share:AbCd12", "https://v.douyin.com/AbCd12/"],
+  ])("normalizes %s", (input, id, source) => {
+    expect(normalizeLiveSource(input)).toMatchObject({ ok: true, id, source });
+  });
+  it.each([
+    "https://douyu.com.evil.test/123", "https://live.douyin.com.evil.test/123",
+    "https://www.douyu.com/topic/event", "https://live.douyin.com/not-a-room",
+    "https://live.douyin.com:8080/123", "https://www.douyin.com/video/123",
+    "https://user:password@www.douyu.com/123",
+  ])("rejects unsupported source %s", (input) => {
+    expect(normalizeLiveSource(input).ok).toBe(false);
+  });
+  it("persists new platforms alongside existing favorites", () => {
+    const storage = memoryStorage();
+    let library = emptySourceLibrary();
+    for (const source of ["https://www.huya.com/1", "https://live.bilibili.com/2", "https://www.douyu.com/3", "https://live.douyin.com/4"]) {
+      const normalized = normalizeLiveSource(source);
+      if (!normalized.ok) throw new Error(normalized.message);
+      library = addOrActivateSource(library, normalized, 1);
+    }
+    library = updateActiveFavoriteMetadata(library, { platform: "douyin", anchor: "抖音主播" });
+    writeSourceLibrary(storage, library);
+    expect(readSourceLibrary(storage)).toEqual(library);
+    expect(readSourceLibrary(storage).favorites.map(f => f.platform)).toEqual(["douyin", "douyu", "bilibili", "huya"]);
+  });
+});

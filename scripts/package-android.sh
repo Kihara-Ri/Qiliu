@@ -6,8 +6,10 @@ project_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 version="$(node -p "require('$project_dir/package.json').version")"
 mode="${1:-debug}"
 
-if [[ -z "${ANDROID_HOME:-${ANDROID_SDK_ROOT:-}}" ]]; then
-  echo "未找到 Android SDK。请先设置 ANDROID_HOME 或 ANDROID_SDK_ROOT。" >&2
+source "$project_dir/scripts/android-env.sh"
+
+if [[ ! -d "$ANDROID_HOME" || ! -d "$NDK_HOME" ]]; then
+  echo "未找到 Android SDK / NDK。请先安装工具或设置 ANDROID_HOME 与 NDK_HOME。" >&2
   exit 1
 fi
 

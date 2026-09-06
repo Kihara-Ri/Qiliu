@@ -60,22 +60,12 @@ impl HuyaClient {
         Ok(Self { http })
     }
 
-    pub async fn resolve(
-        &self,
-        source: &str,
-        requested_line_index: usize,
-        bitrate: u32,
-    ) -> Result<LiveStream, String> {
-        if bitrate > MAX_BITRATE_KBPS {
-            return Err("播放码率超出允许范围".to_string());
-        }
-
-        let room_id = parse_room_id(source)?;
+    async fn room_info(&self, room_id: &str) -> Result<Value, String> {
         let mut endpoint = Url::parse(HUYA_ROOM_API).map_err(|error| error.to_string())?;
         endpoint.query_pairs_mut().extend_pairs([
             ("m", "Live"),
             ("do", "profileRoom"),
-            ("roomid", room_id.as_str()),
+            ("roomid", room_id),
             ("showSecret", "1"),
         ]);
 
@@ -102,6 +92,34 @@ impl HuyaClient {
         if status != 200 {
             return Err(format!("虎牙未返回有效房间信息（状态 {status}）"));
         }
+
+        Ok(payload)
+    }
+
+    pub async fn is_live(&self, source: &str) -> Result<bool, String> {
+        let room_id = parse_room_id(source)?;
+        let payload = self.room_info(&room_id).await?;
+        let status = payload.pointer("/data/liveStatus").and_then(Value::as_str)
+            .ok_or_else(|| "虎牙房间直播状态缺失".to_string())?;
+        match status.trim().to_ascii_uppercase().as_str() {
+            "ON" => Ok(true),
+            "OFF" | "REPLAY" => Ok(false),
+            _ => Err("虎牙房间直播状态未知".to_string()),
+        }
+    }
+
+    pub async fn resolve(
+        &self,
+        source: &str,
+        requested_line_index: usize,
+        bitrate: u32,
+    ) -> Result<LiveStream, String> {
+        if bitrate > MAX_BITRATE_KBPS {
+            return Err("播放码率超出允许范围".to_string());
+        }
+
+        let room_id = parse_room_id(source)?;
+        let payload = self.room_info(&room_id).await?;
 
         let data = payload
             .get("data")

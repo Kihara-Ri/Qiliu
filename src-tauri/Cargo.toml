@@ -22,6 +22,9 @@ tauri-build = { version = "2", features = [] }
 tauri = { version = "2", features = [] }
 base64 = "0.22"
 md5 = "0.7"
+boa_engine = { version = "0.21.1", default-features = false, features = ["annex-b"] }
+regex = "1"
+sm3 = "0.4"
 keyring-core = "1.0.0"
 qrcode = { version = "0.14.1", default-features = false, features = ["svg"] }
 reqwest = { version = "0.12", default-features = false, features = ["gzip", "json", "rustls-tls"] }
@@ -38,3 +41,5 @@ windows-native-keyring-store = "1.0.0"
 
 [target.'cfg(target_os = "android")'.dependencies]
 android-native-keyring-store = "1.0.0"
+jni = "0.21.1"
+ndk-context = "0.1.1"

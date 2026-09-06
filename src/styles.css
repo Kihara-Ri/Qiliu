@@ -884,11 +884,12 @@ input {
 }
 
 .favorite-avatar {
+  position: relative;
   display: grid;
   width: 38px;
   height: 38px;
   place-items: center;
-  overflow: hidden;
+  overflow: visible;
   border: 1px solid var(--line);
   border-radius: 50%;
   background: var(--ground);
@@ -897,7 +898,22 @@ input {
   font-size: 15px;
 }
 
+.favorite-live-badge {
+  position: absolute;
+  right: -2px;
+  bottom: -2px;
+  width: 14px;
+  height: 14px;
+  border: 2px solid var(--ground);
+  border-radius: 50%;
+  background: #32e875;
+  box-shadow: 0 0 5px rgb(50 232 117 / 45%);
+}
+
+.favorite-live-badge[hidden] { display: none; }
+
 .favorite-avatar img {
+  border-radius: 50%;
   width: 100%;
   height: 100%;
   object-fit: cover;
@@ -2072,3 +2088,34 @@ input {
     transition-duration: 0.01ms !important;
   }
 }
+
+/* Compact settings retain the player's warm surfaces and restrained accent. */
+#panel-view-settings { gap: 20px; padding-bottom: 12px; }
+#source-form { gap: 10px; }
+.source-action-status:empty { display: none; }
+.current-room { gap: 12px; padding: 16px 0; border-bottom: 0; }
+.bilibili-account { gap: 12px; padding-top: 16px; }
+.stream-select {
+  width: 100%; min-width: 0; height: 40px; padding: 0 28px 0 10px;
+  border: 1px solid var(--line); border-radius: 8px;
+  background: var(--ground); color: var(--ink); font-size: 0.7rem;
+  text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  position: relative; cursor: pointer;
+}
+.stream-select::after { content: "⌄"; position: absolute; right: 10px; color: var(--quiet); }
+.stream-select:disabled { opacity: 0.58; cursor: default; }
+.stream-select:focus-visible, .stream-select[aria-expanded="true"] { outline: 2px solid var(--accent); outline-offset: 2px; }
+.stream-select-menu {
+  position: fixed; margin: 0; padding: 4px; max-height: 256px; overflow-y: auto;
+  border: 1px solid var(--line); border-radius: 10px;
+  background: var(--panel-raised); color: var(--ink);
+  box-shadow: 0 12px 32px oklch(0.08 0.008 55 / 0.4);
+}
+.stream-select-menu button {
+  display: block; width: 100%; min-height: 36px; padding: 8px 28px 8px 10px;
+  border: 0; border-radius: 6px; background: transparent; color: var(--ink);
+  text-align: left; font-size: 0.72rem; cursor: pointer; position: relative;
+}
+.stream-select-menu button:hover, .stream-select-menu button:focus-visible { background: var(--accent-soft); outline: none; }
+.stream-select-menu button[aria-selected="true"] { color: var(--accent); }
+.stream-select-menu button[aria-selected="true"]::after { content: "✓"; position: absolute; right: 10px; }

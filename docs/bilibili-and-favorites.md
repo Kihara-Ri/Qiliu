@@ -355,3 +355,7 @@ simple-live.huya-source.v1
 - [keyring Rust API](https://docs.rs/keyring/4.2.0)
 - [Tauri Clipboard 插件与权限](https://v2.tauri.app/plugin/clipboard/)
 - [mpegts.js 配置 API](https://xqq.im/mpegts.js/docs/api.html)
+
+### 收藏开播状态
+
+收藏头像右下角的小绿点表示平台确认主播正在直播。启动、添加收藏及打开收藏页时检查状态，前台运行期间约每分钟刷新，最多并发查询 3 个房间。Bilibili 使用公开房间资料的 `live_status == 1`，虎牙使用 `liveStatus == ON`；轮播不显示开播标记。检测不请求播放线路、不加载媒体，也不需要登录 Cookie。状态仅保存在本次会话内，过期或查询失败时隐藏标记；没有标记不代表已确认下播。

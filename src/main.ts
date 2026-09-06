@@ -1,4 +1,6 @@
+import { StreamSelect } from "./stream-select";
 import "./styles.css";
+import { FavoriteLiveStatus } from "./favorite-live-status";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { readText, writeText } from "@tauri-apps/plugin-clipboard-manager";
@@ -51,8 +53,8 @@ const currentRoomAvatarMark = element<HTMLElement>("current-room-avatar-mark");
 const currentRoomState = element<HTMLOutputElement>("current-room-state");
 const currentRoomTitle = element<HTMLElement>("current-room-title");
 const currentRoomAnchor = element<HTMLElement>("current-room-anchor");
-const qualitySelect = element<HTMLSelectElement>("quality-select");
-const lineSelect = element<HTMLSelectElement>("line-select");
+const qualitySelect = new StreamSelect(element<HTMLButtonElement>("quality-select"));
+const lineSelect = new StreamSelect(element<HTMLButtonElement>("line-select"));
 const streamSwitchStatus = element<HTMLOutputElement>("stream-switch-status");
 const favoritesList = element<HTMLElement>("favorites-list");
 const favoritesEmpty = element<HTMLElement>("favorites-empty");
@@ -144,6 +146,17 @@ let currentSource: Extract<NormalizeSourceResult, { ok: true }> | null = null;
 let latestPlaybackStats: PlaybackStats | null = null;
 let activePanelSection: PanelSection = "settings";
 let sourceActionTimer: number | undefined;
+
+const favoriteLiveStatus = new FavoriteLiveStatus(
+  source => invoke<boolean>("get_live_status", { source }),
+  updateFavoriteLiveBadges,
+);
+const favoriteStatusTimer = window.setInterval(() => {
+  if (!document.hidden) void favoriteLiveStatus.refresh(library.favorites);
+}, 10_000);
+document.addEventListener("visibilitychange", () => {
+  if (!document.hidden) void favoriteLiveStatus.refresh(library.favorites);
+});
 
 settingsPanel.inert = true;
 video.volume = lastAudibleVolume;
@@ -323,6 +336,7 @@ document.addEventListener("keydown", (event) => {
 });
 
 window.addEventListener("beforeunload", () => {
+  window.clearInterval(favoriteStatusTimer);
   cancelBilibiliQrPolling();
   supervisor.destroy();
 });
@@ -358,7 +372,7 @@ function renderPlaybackStats(stats: PlaybackStats): void {
   streamInspector.hidden = !stats.active;
   monitorEmpty.hidden = stats.active;
   monitorHeading.dataset.state = stats.active && (stats.live || stats.replay) ? "active" : "idle";
-  monitorStatus.textContent = stats.active
+  monitorStatus.textContent = stats.connecting ? "正在切换 / 连接…" : stats.active
     ? stats.live
       ? "直播接收正常"
       : stats.replay
@@ -367,6 +381,10 @@ function renderPlaybackStats(stats: PlaybackStats): void {
     : "等待播放";
   setAvatar(statusAvatar, stats.avatarUrl);
   if (!stats.active) {
+    for (const field of [statQuality, statNominalBitrate, statLiveBitrate, statResolution,
+      statFrameRate, statBuffer, statDroppedFrames, statLine, statConnectionHealth]) {
+      field.textContent = stats.connecting ? "切换中…" : "—";
+    }
     if (currentSource) renderCurrentRoomPending(currentSource);
     return;
   }
@@ -454,10 +472,10 @@ function renderCurrentRoomStats(stats: PlaybackStats): void {
     stats.lineOptions.map((option) => ({ value: option.index, label: option.label })),
     stats.selectedLineIndex,
   );
-  const selectable = stats.live && !stats.replay;
+  const selectable = stats.live && !stats.replay && !stats.connecting;
   qualitySelect.disabled = !selectable || stats.qualityOptions.length <= 1;
   lineSelect.disabled = !selectable || stats.lineOptions.length <= 1;
-  streamSwitchStatus.textContent = selectable
+  streamSwitchStatus.textContent = stats.connecting ? "正在连接所选画质与线路…" : selectable
     ? [stats.qualityLabel, stats.lineLabel].filter(Boolean).join(" · ")
     : stats.replay
       ? "回放使用平台提供的固定画质与线路"
@@ -465,22 +483,11 @@ function renderCurrentRoomStats(stats: PlaybackStats): void {
 }
 
 function updateSelectOptions(
-  select: HTMLSelectElement,
+  select: StreamSelect,
   options: Array<{ value: number; label: string }>,
   selected: number,
 ): void {
-  const signature = options.map((option) => `${option.value}:${option.label}`).join("|");
-  if (select.dataset.options !== signature) {
-    select.replaceChildren(...options.map((option) => {
-      const element = document.createElement("option");
-      element.value = String(option.value);
-      element.textContent = option.label;
-      return element;
-    }));
-    select.dataset.options = signature;
-  }
-  select.value = String(selected);
-  if (select.selectedIndex < 0 && select.options.length > 0) select.selectedIndex = 0;
+  select.update(options, selected);
 }
 
 function renderFavorites(): void {
@@ -489,6 +496,7 @@ function renderFavorites(): void {
   favoritesEmpty.hidden = library.favorites.length > 0;
   const rows = library.favorites.map((favorite) => createFavoriteRow(favorite));
   favoritesList.replaceChildren(...rows);
+  void favoriteLiveStatus.refresh(library.favorites);
   renderSourceFavoriteState();
 }
 
@@ -563,9 +571,20 @@ function showSourceAction(message: string): void {
   }, 2_200);
 }
 
+function updateFavoriteLiveBadges(): void {
+  favoritesList.querySelectorAll<HTMLElement>("[data-favorite-id]").forEach(row => {
+    const badge = row.querySelector<HTMLElement>(".favorite-live-badge");
+    if (badge) badge.hidden = !favoriteLiveStatus.isLive(row.dataset.favoriteId!);
+    const favorite = library.favorites.find(item => item.id === row.dataset.favoriteId);
+    if (favorite) row.querySelector(".favorite-select")?.setAttribute("aria-label",
+      `播放 ${favorite.anchor || favorite.platformLabel} 直播间${badge && !badge.hidden ? "，正在直播" : ""}`);
+  });
+}
+
 function createFavoriteRow(favorite: FavoriteSource): HTMLElement {
   const row = document.createElement("div");
   row.className = "favorite-row";
+  row.dataset.favoriteId = favorite.id;
   const active = favorite.id === library.activeId;
   if (active) row.classList.add("is-active");
 
@@ -591,6 +610,13 @@ function createFavoriteRow(favorite: FavoriteSource): HTMLElement {
     image.addEventListener("error", () => image.remove(), { once: true });
     avatar.append(image);
   }
+
+  const badge = document.createElement("span");
+  badge.className = "favorite-live-badge";
+  badge.setAttribute("aria-hidden", "true");
+  badge.title = "正在直播";
+  badge.hidden = !favoriteLiveStatus.isLive(favorite.id);
+  avatar.append(badge);
 
   const copy = document.createElement("span");
   copy.className = "favorite-copy";
@@ -897,6 +923,7 @@ function setSettingsOpen(open: boolean): void {
   if (open === settingsOpen) return;
 
   settingsOpen = open;
+  if (!open) { qualitySelect.close(false); lineSelect.close(false); }
   window.clearTimeout(panelFocusTimer);
   panelFocusTimer = undefined;
 
@@ -928,9 +955,12 @@ function setSettingsOpen(open: boolean): void {
 }
 
 function setPanelSection(section: PanelSection, focusTab = false): void {
+  qualitySelect.close(false);
+  lineSelect.close(false);
   const nextIndex = panelTabs.findIndex((tab) => panelSectionOf(tab) === section);
   const previousIndex = panelTabs.findIndex((tab) => panelSectionOf(tab) === activePanelSection);
   activePanelSection = section;
+  if (section === "favorites") void favoriteLiveStatus.refresh(library.favorites);
   panelTabList.style.setProperty("--active-tab-index", String(Math.max(0, nextIndex)));
   panelTabList.dataset.direction = nextIndex >= previousIndex ? "forward" : "backward";
   panelTabs.forEach((tab) => {
