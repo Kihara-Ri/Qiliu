@@ -7,6 +7,7 @@ import Hls, {
   type FragLoadedData,
 } from "hls.js";
 import mpegts from "mpegts.js";
+import { bilibiliLivePlaylistConfig } from "./hls-playlist-policy";
 import {
   BILIBILI_BUFFER_WINDOW_MS,
   decideRecoveryLine,
@@ -101,6 +102,8 @@ const SOFT_STALL_LIMIT_MS = 12_000;
 const STALL_LIMIT_MS = 30_000;
 const SOFT_RECOVERY_GRACE_MS = 15_000;
 const CONNECT_TIMEOUT_MS = 20_000;
+const BILIBILI_RESUME_BUFFER_SECONDS = 4;
+const BILIBILI_REFILL_TIMEOUT_MS = 12_000;
 const OFFLINE_RECHECK_MS = 30_000;
 const STABLE_RESET_MS = 60_000;
 const HUYA_CONTINUATION_PREFETCH_MS = 100_000;
@@ -147,6 +150,7 @@ export class PlaybackSupervisor {
   private lastBilibiliBufferEventAt = 0;
   private bilibiliBufferEventCount = 0;
   private bilibiliQualityFallbackCount = 0;
+  private bufferRefillTimer: number | undefined;
 
   constructor(
     private readonly video: HTMLVideoElement,
@@ -211,6 +215,13 @@ export class PlaybackSupervisor {
 
   async togglePause(): Promise<void> {
     if (!this.video.src) return;
+    if (this.bufferRefillTimer !== undefined) {
+      this.clearBufferRefill();
+      this.userPaused = true;
+      this.video.pause();
+      this.emit("paused", "已暂停", "按空格继续播放");
+      return;
+    }
     if (this.video.paused) {
       this.userPaused = false;
       try {
@@ -239,7 +250,7 @@ export class PlaybackSupervisor {
     if (muted) return;
 
     try {
-      if (this.video.src && !this.userPaused) {
+      if (this.video.src && !this.userPaused && this.bufferRefillTimer === undefined) {
         await this.video.play();
       }
       if (wasMutedByPolicy && this.currentStream) {
@@ -399,6 +410,8 @@ export class PlaybackSupervisor {
         liveSyncDurationCount: 3,
         liveMaxLatencyDurationCount: 8,
         maxLiveSyncPlaybackRate: 1.08,
+        ...(this.currentStream?.platform === "bilibili" && this.currentStream.isLive
+          ? bilibiliLivePlaylistConfig() : {}),
       });
       this.hls = hls;
       this.hlsMediaRecoveryCount = 0;
@@ -603,6 +616,10 @@ export class PlaybackSupervisor {
 
   private readonly handlePlaying = (): void => {
     if (!this.source || this.userPaused) return;
+    if (this.bufferRefillTimer !== undefined) {
+      this.video.pause();
+      return;
+    }
     this.connecting = false;
     this.lastMediaTime = this.video.currentTime;
     this.lastAdvanceAt = Date.now();
@@ -643,15 +660,66 @@ export class PlaybackSupervisor {
   };
 
   private readonly handleWaiting = (): void => {
-    if (this.connecting || this.userPaused || Date.now() < this.suppressMediaEventsUntil) return;
+    if (this.connecting || this.userPaused || this.bufferRefillTimer !== undefined
+      || Date.now() < this.suppressMediaEventsUntil) return;
     const stream = this.currentStream;
+    const ahead = bufferedAhead(this.video);
+    // A network stalled event does not mean playback has exhausted its buffer.
+    if (ahead !== null && ahead > 0.5) return;
     this.recordBilibiliUnderflow();
+    if (stream?.platform === "bilibili" && stream.isLive && stream.format === "flv"
+      && ahead !== null) {
+      this.refillBilibiliBuffer();
+      return;
+    }
     this.emit(
       "connecting",
       "正在缓冲",
       stream?.lineCount ? `当前线路 ${stream.lineIndex + 1}/${stream.lineCount}` : "正在等待新画面",
     );
   };
+
+  private refillBilibiliBuffer(): void {
+    const generation = this.generation;
+    const started = Date.now();
+    // Pause consumption only; lazyLoad:false keeps the FLV download and MSE
+    // appends running so short CDN gaps do not cause repeated tiny restarts.
+    this.video.pause();
+    this.emit("connecting", "正在补足缓冲", "积累约 4 秒画面后继续播放");
+    this.bufferRefillTimer = window.setInterval(() => {
+      if (generation !== this.generation || this.userPaused) {
+        this.clearBufferRefill();
+        return;
+      }
+      const expired = Date.now() - started >= BILIBILI_REFILL_TIMEOUT_MS;
+      const resumeAt = bufferedResumePosition(
+        this.video,
+        expired ? 0.51 : BILIBILI_RESUME_BUFFER_SECONDS,
+      );
+      if (resumeAt === null && !expired) return;
+      this.clearBufferRefill();
+      if (resumeAt === null) {
+        this.scheduleRecovery("缓冲期间未收到足够的直播数据");
+        return;
+      }
+      // FLV timestamps can leave holes between appended ranges. Waiting at
+      // the old range's end never consumes the frames already beyond the hole.
+      if (resumeAt > this.video.currentTime) {
+        this.video.currentTime = resumeAt;
+      }
+      this.lastAdvanceAt = Date.now();
+      this.lastFrameAdvanceAt = Date.now();
+      this.softRecoveryAt = 0;
+      void this.video.play().catch((error: unknown) => {
+        if (generation === this.generation) this.scheduleRecovery(errorMessage(error));
+      });
+    }, 250);
+  }
+
+  private clearBufferRefill(): void {
+    window.clearInterval(this.bufferRefillTimer);
+    this.bufferRefillTimer = undefined;
+  }
 
   private recordBilibiliUnderflow(): void {
     const stream = this.currentStream;
@@ -688,7 +756,8 @@ export class PlaybackSupervisor {
   };
 
   private readonly watchPlayback = (): void => {
-    if (!this.source || !this.currentStream?.url || this.connecting || this.userPaused) return;
+    if (!this.source || !this.currentStream?.url || this.connecting || this.userPaused
+      || this.bufferRefillTimer !== undefined) return;
     this.handleProgress();
     const now = Date.now();
     const mediaStalledFor = now - this.lastAdvanceAt;
@@ -716,10 +785,16 @@ export class PlaybackSupervisor {
     if (!this.currentStream?.isLive || this.currentStream?.format !== "flv") return false;
 
     try {
-      const ranges = this.video.seekable;
+      // MSE seekable may span holes (or an infinite live timeline); only
+      // buffered describes frames that can actually be played after the seek.
+      const ranges = this.video.buffered;
       if (ranges.length === 0) return false;
       const liveEdge = ranges.end(ranges.length - 1);
-      const target = Math.max(0, liveEdge - 0.8);
+      const reserve = this.currentStream.platform === "bilibili"
+        ? BILIBILI_RESUME_BUFFER_SECONDS : 0.8;
+      const rangeStart = ranges.start(ranges.length - 1);
+      if (liveEdge - rangeStart <= 0.5) return false;
+      const target = Math.max(rangeStart + 0.05, liveEdge - reserve);
       if (!Number.isFinite(target) || target - this.video.currentTime < 1.25) return false;
 
       this.emit("connecting", "正在追赶直播", "播放器正在回到最新画面");
@@ -733,6 +808,7 @@ export class PlaybackSupervisor {
 
   private scheduleRecovery(reason: string): void {
     if (!this.source || this.reconnectTimer !== undefined) return;
+    this.clearBufferRefill();
     if (!navigator.onLine) {
       this.handleOffline();
       return;
@@ -785,6 +861,7 @@ export class PlaybackSupervisor {
 
   private readonly handleOffline = (): void => {
     if (!this.source) return;
+    this.clearBufferRefill();
     this.connecting = false;
     window.clearTimeout(this.reconnectTimer);
     this.reconnectTimer = undefined;
@@ -971,6 +1048,7 @@ export class PlaybackSupervisor {
       || this.reconnectTimer !== undefined
     ) return;
     this.preferStableBilibiliQuality = true;
+    this.clearBufferRefill();
     this.bilibiliQualityFallbackCount += 1;
     this.reconnectCount += 1;
     this.lastRecoveryAction = "切换稳定画质";
@@ -1038,6 +1116,7 @@ export class PlaybackSupervisor {
   }
 
   private destroyPlayers(): void {
+    this.clearBufferRefill();
     this.destroyHls();
     const player = this.mpegtsPlayer;
     this.mpegtsPlayer = undefined;
@@ -1205,4 +1284,18 @@ function bufferedAhead(video: HTMLVideoElement): number | null {
     }
   }
   return video.readyState > HTMLMediaElement.HAVE_NOTHING ? 0 : null;
+}
+
+function bufferedResumePosition(video: HTMLVideoElement, reserve: number): number | null {
+  const currentTime = video.currentTime;
+  for (let index = 0; index < video.buffered.length; index += 1) {
+    const start = video.buffered.start(index);
+    const end = video.buffered.end(index);
+    const target = currentTime < start ? start + 0.05 : currentTime;
+    // Check each contiguous range separately, never sum across timestamp gaps.
+    if (Number.isFinite(target) && Number.isFinite(end) && end - target >= reserve) {
+      return target;
+    }
+  }
+  return null;
 }
