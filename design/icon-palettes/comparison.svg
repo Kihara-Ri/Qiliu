@@ -1,0 +1,38 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1536" height="1536" viewBox="0 0 1536 1536"><rect width="1536" height="1536" fill="#FAFAF8"/>
+<g transform="translate(42 160) scale(0.44)">
+  <rect x="52" y="52" width="920" height="920" rx="224" fill="#E3EBF3"/>
+  <path d="M312 456V312H456M568 712H712V568" fill="none" stroke="#48647E" stroke-width="68" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="512" cy="512" r="72" fill="#E99A53"/>
+</g>
+<text x="267" y="660" text-anchor="middle" font-family="Helvetica,Arial,sans-serif" font-size="36" font-weight="600" fill="#3D454A">A</text>
+<g transform="translate(540 160) scale(0.44)">
+  <rect x="52" y="52" width="920" height="920" rx="224" fill="#F4F0E7"/>
+  <path d="M312 456V312H456M568 712H712V568" fill="none" stroke="#355B56" stroke-width="68" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="512" cy="512" r="72" fill="#D97461"/>
+</g>
+<text x="765" y="660" text-anchor="middle" font-family="Helvetica,Arial,sans-serif" font-size="36" font-weight="600" fill="#3D454A">B</text>
+<g transform="translate(1038 160) scale(0.44)">
+  <rect x="52" y="52" width="920" height="920" rx="224" fill="#DFEAE3"/>
+  <path d="M312 456V312H456M568 712H712V568" fill="none" stroke="#355E55" stroke-width="68" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="512" cy="512" r="72" fill="#CB9645"/>
+</g>
+<text x="1263" y="660" text-anchor="middle" font-family="Helvetica,Arial,sans-serif" font-size="36" font-weight="600" fill="#3D454A">C</text>
+<g transform="translate(42 810) scale(0.44)">
+  <rect x="52" y="52" width="920" height="920" rx="224" fill="#EFE2CC"/>
+  <path d="M312 456V312H456M568 712H712V568" fill="none" stroke="#6E5A49" stroke-width="68" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="512" cy="512" r="72" fill="#C7684F"/>
+</g>
+<text x="267" y="1310" text-anchor="middle" font-family="Helvetica,Arial,sans-serif" font-size="36" font-weight="600" fill="#3D454A">D</text>
+<g transform="translate(540 810) scale(0.44)">
+  <rect x="52" y="52" width="920" height="920" rx="224" fill="#EAE5F2"/>
+  <path d="M312 456V312H456M568 712H712V568" fill="none" stroke="#62577B" stroke-width="68" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="512" cy="512" r="72" fill="#DC9279"/>
+</g>
+<text x="765" y="1310" text-anchor="middle" font-family="Helvetica,Arial,sans-serif" font-size="36" font-weight="600" fill="#3D454A">E</text>
+<g transform="translate(1038 810) scale(0.44)">
+  <rect x="52" y="52" width="920" height="920" rx="224" fill="#F6E9E2"/>
+  <path d="M312 456V312H456M568 712H712V568" fill="none" stroke="#845E59" stroke-width="68" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="512" cy="512" r="72" fill="#B87C3F"/>
+</g>
+<text x="1263" y="1310" text-anchor="middle" font-family="Helvetica,Arial,sans-serif" font-size="36" font-weight="600" fill="#3D454A">F</text>
+</svg>

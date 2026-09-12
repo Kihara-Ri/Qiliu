@@ -564,7 +564,8 @@ input {
   transition-delay: 0s;
 }
 
-#panel-view-settings {
+#panel-view-settings,
+#panel-view-info {
   display: grid;
   gap: var(--space-2xl);
   align-content: start;
@@ -2090,7 +2091,8 @@ input {
 }
 
 /* Compact settings retain the player's warm surfaces and restrained accent. */
-#panel-view-settings { gap: 20px; padding-bottom: 12px; }
+#panel-view-settings,
+#panel-view-info { gap: 20px; padding-bottom: 12px; }
 #source-form { gap: 10px; }
 .source-action-status:empty { display: none; }
 .current-room { gap: 12px; padding: 16px 0; border-bottom: 0; }
@@ -2119,3 +2121,99 @@ input {
 .stream-select-menu button:hover, .stream-select-menu button:focus-visible { background: var(--accent-soft); outline: none; }
 .stream-select-menu button[aria-selected="true"] { color: var(--accent); }
 .stream-select-menu button[aria-selected="true"]::after { content: "✓"; position: absolute; right: 10px; }
+
+/* Floating controls keep their hit areas available even when fully transparent. */
+.app-shell .settings-trigger,
+.app-shell .volume-control {
+  opacity: var(--control-idle-opacity, 0.25);
+}
+.app-shell .settings-trigger {
+  transition:
+    background 220ms ease,
+    border-color 220ms ease,
+    opacity var(--control-fade-time, 480ms) ease,
+    transform 460ms var(--ease-toggle);
+}
+.app-shell .volume-control {
+  transition: opacity var(--control-fade-time, 480ms) ease;
+}
+.app-shell .volume-toggle { opacity: 1; }
+.app-shell.controls-awake .settings-trigger,
+.app-shell.controls-awake .volume-control,
+.app-shell.controls-keyboard .settings-trigger:focus-visible,
+.app-shell.controls-keyboard .volume-control:focus-within,
+.app-shell.settings-open .settings-trigger {
+  opacity: var(--control-active-opacity, 1);
+  --control-fade-time: 240ms;
+}
+.app-shell .control-positioned {
+  left: var(--control-x);
+  top: var(--control-y);
+  right: auto;
+  bottom: auto;
+}
+.volume-control.control-positioned { width: 44px; }
+.volume-control.expand-left .volume-slider-shell {
+  left: auto;
+  right: 28px;
+  padding: 0 30px 0 12px;
+  border-radius: 999px 0 0 999px;
+  transform: translateX(12px);
+}
+.volume-control.expand-left.is-expanded .volume-slider-shell { transform: translateX(0); }
+.playback-preferences h3 { font-size: 0.85rem; font-weight: 500; margin: 0 0 12px; }
+.control-idle-preview {
+  display: flex; align-items: center; justify-content: space-between;
+  min-height: 40px; padding: 6px 12px; margin-top: 8px;
+  border-radius: 8px; background: var(--ground); color: var(--muted); font-size: 0.72rem;
+}
+.control-idle-preview .bi { font-family: "Bootstrap Icons"; font-style: normal; color: var(--ink); font-size: 22px; opacity: var(--control-idle-opacity); transition: opacity 180ms ease; }
+.control-preferences { border-top: 1px solid var(--line); padding-top: 16px; }
+.control-preferences summary { cursor: pointer; font-size: 0.85rem; }
+.control-preferences label { display: flex; justify-content: space-between; margin-top: 12px; font-size: 0.78rem; }
+.control-preferences input { width: 100%; accent-color: var(--accent); margin: 6px 0 0; }
+.control-preferences p { color: var(--muted); font-size: 0.72rem; line-height: 1.6; margin: 8px 0 12px; }
+.control-edit-bar {
+  position: absolute;
+  left: 50%; top: 56px; transform: translateX(-50%);
+  z-index: 7; display: flex; align-items: center; gap: 16px;
+  width: max-content; max-width: calc(100% - 32px);
+  padding: 10px 14px; border: 1px solid var(--line); border-radius: 12px;
+  background: var(--panel); font-size: 0.78rem;
+}
+.control-edit-bar[hidden] { display: none; }
+.control-edit-bar button { border: 0; border-radius: 6px; padding: 8px 12px; background: var(--ink); color: var(--ground); cursor: pointer; white-space: nowrap; }
+.app-shell.controls-editing .settings-trigger,
+.app-shell.controls-editing .volume-control { opacity: 1; z-index: 8; }
+.controls-editing .settings-trigger,
+.controls-editing .volume-toggle {
+  cursor: grab; touch-action: none; outline: 1px dashed var(--accent); outline-offset: 5px;
+  transform: none;
+}
+.controls-editing .is-dragging,
+.controls-editing .is-dragging .volume-toggle { cursor: grabbing; }
+.controls-editing .volume-slider-shell { display: none; }
+@media (max-width: 760px) {
+  .app-shell .settings-trigger {
+    transition:
+      bottom 460ms var(--ease-toggle),
+      background 220ms ease,
+      border-color 220ms ease,
+      opacity var(--control-fade-time, 480ms) ease,
+      transform 460ms var(--ease-toggle);
+  }
+  .volume-control.control-positioned { width: 48px; }
+  .volume-control.expand-left .volume-slider-shell { right: 32px; }
+  .app-shell.settings-open .volume-control { opacity: 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .app-shell .settings-trigger, .app-shell .volume-control { transition: none; }
+}
+
+#panel-view-settings { gap: 16px; }
+.stream-switch-status:empty { display: none; }
+
+#panel-view-settings .bilibili-account { gap: 8px; padding-top: 0; border-top: 0; }
+#panel-view-settings .playback-preferences { padding-top: 12px; border-top: 1px solid var(--line); }
+#panel-view-settings .control-preferences { padding-top: 12px; }
+#panel-view-settings .control-preferences p { margin: 6px 0 8px; }

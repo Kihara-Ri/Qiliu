@@ -1,3 +1,4 @@
+import { setupFloatingControls } from "./floating-controls";
 import { StreamSelect } from "./stream-select";
 import "./styles.css";
 import { FavoriteLiveStatus } from "./favorite-live-status";
@@ -108,7 +109,7 @@ const windowsPlatform = /Windows/u.test(navigator.userAgent);
 document.documentElement.dataset.input = coarsePointer.matches ? "touch" : "pointer";
 document.documentElement.dataset.platform = windowsPlatform ? "windows" : "default";
 
-type PanelSection = "settings" | "favorites" | "monitor" | "about";
+type PanelSection = "settings" | "favorites" | "info" | "about";
 
 interface BilibiliAuthStatus {
   status: "guest" | "authenticated" | "expired" | "unavailable";
@@ -144,7 +145,7 @@ let lastAudibleVolume = readSavedVolume();
 let library = readSourceLibrary(window.localStorage);
 let currentSource: Extract<NormalizeSourceResult, { ok: true }> | null = null;
 let latestPlaybackStats: PlaybackStats | null = null;
-let activePanelSection: PanelSection = "settings";
+let activePanelSection: PanelSection = "info";
 let sourceActionTimer: number | undefined;
 
 const favoriteLiveStatus = new FavoriteLiveStatus(
@@ -164,7 +165,7 @@ video.muted = window.localStorage.getItem(MUTED_STORAGE_KEY) === "true";
 renderVolumeControl();
 
 const supervisor = new PlaybackSupervisor(video, renderPlaybackState, renderPlaybackStats);
-setPanelSection("settings");
+setPanelSection("info");
 writeSourceLibrary(window.localStorage, library);
 renderFavorites();
 void refreshBilibiliAuthStatus();
@@ -181,19 +182,21 @@ if (savedSource) {
   renderPlaybackState({
     phase: "idle",
     headline: "等待直播源",
-    detail: "使用右上角的设置按钮粘贴直播间链接",
+    detail: "打开侧栏，在「信息」中粘贴直播间链接",
     mutedByPolicy: false,
   });
   window.setTimeout(() => setSettingsOpen(true), 280);
 }
+
+setupFloatingControls(app, settingsTrigger, volumeControl, () => setSettingsOpen(false));
 
 settingsTrigger.addEventListener("click", () => setSettingsOpen(!settingsOpen));
 panelTabs.forEach((tab, index) => {
   tab.addEventListener("click", () => setPanelSection(panelSectionOf(tab), true));
   tab.addEventListener("keydown", (event) => navigatePanelTabs(event, index));
 });
-favoritesAdd.addEventListener("click", showSourceSettings);
-favoritesEmptyAdd.addEventListener("click", showSourceSettings);
+favoritesAdd.addEventListener("click", showSourceInformation);
+favoritesEmptyAdd.addEventListener("click", showSourceInformation);
 aboutCopyButtons.forEach((button) => {
   button.addEventListener("click", () => void copyAboutLink(button));
 });
@@ -932,8 +935,8 @@ function setSettingsOpen(open: boolean): void {
   settingsTrigger.setAttribute("aria-expanded", String(open));
 
   if (open) {
-    setPanelSection("settings");
     app.classList.add("settings-open");
+    setPanelSection("info");
     panelFocusTimer = window.setTimeout(() => {
       if (coarsePointer.matches) {
         panelFocusTimer = undefined;
@@ -977,12 +980,12 @@ function setPanelSection(section: PanelSection, focusTab = false): void {
     view.setAttribute("aria-hidden", String(!active));
     view.inert = !active;
   });
-  supervisor.setStatsInspectionActive(settingsOpen && section === "monitor");
+  supervisor.setStatsInspectionActive(settingsOpen && section === "info");
 }
 
 function panelSectionOf(tab: HTMLElement): PanelSection {
   const section = tab.dataset.panelSection;
-  if (section === "favorites" || section === "monitor" || section === "about") return section;
+  if (section === "favorites" || section === "info" || section === "about") return section;
   return "settings";
 }
 
@@ -998,8 +1001,8 @@ function navigatePanelTabs(event: KeyboardEvent, currentIndex: number): void {
   if (nextTab) setPanelSection(panelSectionOf(nextTab), true);
 }
 
-function showSourceSettings(): void {
-  setPanelSection("settings");
+function showSourceInformation(): void {
+  setPanelSection("info");
   window.requestAnimationFrame(() => sourceInput.focus());
 }
 

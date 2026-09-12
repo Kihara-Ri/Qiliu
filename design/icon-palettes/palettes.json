@@ -1,0 +1,44 @@
+[
+  {
+    "id": "A",
+    "name": "晨蓝",
+    "background": "#E3EBF3",
+    "stroke": "#48647E",
+    "dot": "#E99A53"
+  },
+  {
+    "id": "B",
+    "name": "暖瓷",
+    "background": "#F4F0E7",
+    "stroke": "#355B56",
+    "dot": "#D97461"
+  },
+  {
+    "id": "C",
+    "name": "雾青",
+    "background": "#DFEAE3",
+    "stroke": "#355E55",
+    "dot": "#CB9645"
+  },
+  {
+    "id": "D",
+    "name": "燕麦",
+    "background": "#EFE2CC",
+    "stroke": "#6E5A49",
+    "dot": "#C7684F"
+  },
+  {
+    "id": "E",
+    "name": "浅藤",
+    "background": "#EAE5F2",
+    "stroke": "#62577B",
+    "dot": "#DC9279"
+  },
+  {
+    "id": "F",
+    "name": "杏白",
+    "background": "#F6E9E2",
+    "stroke": "#845E59",
+    "dot": "#B87C3F"
+  }
+]
