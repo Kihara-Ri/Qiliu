@@ -99,6 +99,7 @@ pub fn room(platform: &str, label: &str, id: String, source: String) -> LiveStre
         title: String::new(),
         anchor: String::new(),
         avatar_url: String::new(),
+        cover_url: String::new(),
         is_live: false,
         is_replay: false,
         url: None,

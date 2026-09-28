@@ -1,7 +1,7 @@
 {
   "name": "qiliu",
   "private": true,
-  "version": "1.3.1",
+  "version": "1.4.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -16,6 +16,7 @@
     "package:android": "bash scripts/package-android.sh",
     "package:android:release": "bash scripts/package-android.sh --release",
     "android:init": "tauri android init --ci",
+    "android:icons": "node scripts/sync-android-icons.mjs",
     "preview": "vite preview",
     "test": "vitest run",
     "test:rust": "cargo test --manifest-path src-tauri/Cargo.toml",

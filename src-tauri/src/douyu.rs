@@ -133,6 +133,7 @@ impl DouyuClient {
         if stream.avatar_url.is_empty() {
             stream.avatar_url = common::text(&data["avatar_mid"]);
         }
+        stream.cover_url = common::text(&data["room_pic"]);
         stream.is_live = live_status(&data)?;
         if !stream.is_live {
             return Ok(stream);

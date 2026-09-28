@@ -4,7 +4,7 @@
   <img src="public/app-icon.svg" width="128" height="128" alt="栖流 Qiliu 直播播放器图标">
 </p>
 
-**在 macOS、Windows 和 Android 上，集中收藏并观看虎牙、哔哩哔哩（Bilibili / B站）、斗鱼和抖音直播。**
+**在 macOS、Windows 和 Android 上，集中收藏并观看虎牙、哔哩哔哩（Bilibili / B站）、斗鱼、抖音直播和央视频道。**
 
 栖流是一款开源直播播放器，适合长期观看固定直播间、希望界面简洁的用户。粘贴直播间链接即可播放，收藏常看的主播，下次打开继续播放上次的直播间。界面不包含弹幕、礼物和推荐信息流，同一时间播放一路直播。
 
@@ -33,7 +33,7 @@
 
 macOS 公开构建使用 ad-hoc 签名，尚未经过 Apple 公证；Windows 公开构建尚无代码签名证书，首次启动或安装时可能出现系统来源提醒。请确认安装包来自本仓库 Releases。
 
-Android 文件名带 `-debug.apk` 的构建用于测试。正式签名与调试签名的安装包可能无法互相覆盖安装，更新前请查看对应 Release 说明。
+Android 文件名带 `-debug.apk` 的构建用于测试：同样是 release 编译，只是用调试密钥签名。正式签名与调试签名的安装包可能无法互相覆盖安装，更新前请查看对应 Release 说明。
 
 ## 快速上手
 
@@ -52,6 +52,7 @@ Android 文件名带 `-debug.apk` 的构建用于测试。正式签名与调试�
 | 哔哩哔哩 / Bilibili / B站 | `live.bilibili.com` 直播间链接 | 支持扫码登录；画质取决于账号权限与直播间实际提供的档位 |
 | 斗鱼 | 数字房间、房间别名、带 `rid` 的活动链接 | 画质与 CDN 线路以平台返回值为准 |
 | 抖音 | `live.douyin.com` 直播间链接、`v.douyin.com` 分享短链接 | 若短链接未指向可解析的直播间，请使用直播间直链 |
+| 央视频道 | `tv.cctv.com/live/...` 央视官网直播链接 | 目前支持 CCTV-1 综合与 CCTV-13 新闻；其余频道需平台授权，暂不在公开线路提供 |
 
 应用可从分享文案中提取受支持的链接。平台验证、地区限制、付费权限或接口变更可能导致部分直播间无法解析。
 
@@ -59,7 +60,7 @@ Android 文件名带 `-debug.apk` 的构建用于测试。正式签名与调试�
 
 ### Mac 上可以用栖流看 B站、虎牙或斗鱼直播吗？
 
-可以。栖流面向 macOS、Windows 与 Android，支持虎牙、Bilibili、斗鱼和抖音直播。请从发布页选择适合设备架构的安装包。
+可以。栖流面向 macOS、Windows 与 Android，支持虎牙、Bilibili、斗鱼、抖音直播和央视频道（CCTV-1、CCTV-13）。请从发布页选择适合设备架构的安装包。
 
 ### 支持弹幕、多开或搜索主播吗？
 
@@ -85,7 +86,7 @@ Bilibili 支持扫码登录，以获取账号实际可用的画质。最高档�
 
 ## English overview
 
-Qiliu (栖流) is an open-source, lightweight live stream player for macOS, Windows, and Android. It supports Huya, Bilibili, Douyu, and Douyin live rooms.
+Qiliu (栖流) is an open-source, lightweight live stream player for macOS, Windows, and Android. It supports Huya, Bilibili, Douyu, and Douyin live rooms, plus CCTV channels (CCTV-1 and CCTV-13).
 
 Paste a live room URL to watch, save favorite rooms across platforms, and resume the last room when reopening the app. Qiliu focuses on one stream at a time, with selectable quality and playback lines where available. It does not include bullet chat, gifts, streamer search, or a recommendation feed.
 
@@ -116,6 +117,7 @@ npm run tauri dev
 ```text
 https://www.huya.com/196645
 https://live.bilibili.com/22907643
+https://tv.cctv.com/live/cctv1/
 ```
 
 ## 编译与验证
@@ -177,10 +179,10 @@ npm run package:android
 准备新版本并同步所有版本号（以下以 `1.3.2` 为示例，请替换为待发布版本）：
 
 ```bash
-npm run release:prepare -- 1.3.2
+npm run release:prepare -- 1.4.0
 ```
 
-推送对应的 `v1.3.2` 标签后，GitHub Actions 会在原生 macOS、Windows 与 Android 环境构建并把安装包集中发布到同一个 Release。完整环境、签名和故障排查见 [跨平台界面与构建](docs/cross-platform-builds.md)。
+推送对应的 `v1.4.0` 标签后，GitHub Actions 会在原生 macOS、Windows 与 Android 环境构建并把安装包集中发布到同一个 Release。提交、构建、上传与下载核验见 [完整发布流程](docs/release-process.md)。完整环境、签名和故障排查见 [跨平台界面与构建](docs/cross-platform-builds.md)。
 
 真实直播长时间播放测试依赖当前房间状态、平台接口和网络环境，不包含在默认自动化测试中。发布新版本前应分别用一个正在直播的虎牙和 Bilibili 房间进行持续播放验证。
 
@@ -200,6 +202,7 @@ src-tauri/src/
   douyu.rs                   斗鱼房间、签名与播放线路
   douyin.rs                  抖音房间与播放线路
   douyin_sign.rs             抖音请求签名
+  cctv.rs                    央视频道表、CDN HLS 画质校验
   live_source.rs             直播来源与链接处理
   stream.rs                  跨平台统一播放信号
   lib.rs                     Tauri 命令入口与平台路由
@@ -224,7 +227,8 @@ Rust 平台解析器
     ├─ 虎牙：房间信息、动态签名、CDN 列表、WUP 回放
     ├─ Bilibili：真实房间号、账号档位、H.264 FLV / HLS 线路
     ├─ 斗鱼：房间信息、动态签名、画质与 CDN
-    └─ 抖音：分享链接、房间信息、H.264 FLV / HLS 线路
+    ├─ 抖音：分享链接、房间信息、H.264 FLV / HLS 线路
+    └─ 央视频道：CDN HLS 画质表与线路校验
     ↓
 统一 StreamSignal
     ↓
@@ -266,6 +270,12 @@ FLV 使用 `mpegts.js` 解复用到 Media Source Extensions；HLS 使用 `HLS.js
 
 斗鱼从房间接口读取开播状态，在应用内执行官方动态签名脚本，再请求 H5 播放地址；画质和 CDN 线路以平台返回值为准。抖音使用匿名访客 Cookie、a_bogus 签名接口及页面 roomStore 备用解析，提取 H.264 FLV/HLS 画质。无需安装 Python 或 Node.js，也不内置参考项目中的账号 Cookie。平台验证、地区限制、付费权限或接口变更仍可能导致解析失败；此时不会显示为未开播。
 
+## 央视频道直播源
+
+支持粘贴央视官网直播链接（如 `https://tv.cctv.com/live/cctv1/`）。解析器读取央视网网页播放器使用的公开 CDN HLS：无需登录、Cookie 或签名，画质表从 CDN master 播放列表动态解析，并逐档校验真实可用后才显示；当前提供 1080P 至 480P 多档 H.264 画质。
+
+需要说明范围：该 CDN 的频道模板覆盖大部分央视频道，但实际携带直播流的目前只有 **CCTV-1 综合**与 **CCTV-13 新闻**——这两个频道是网页播放器的全球保底线路。其余频道（体育、电影等）的正式播放地址由平台接口按地区与版权授权下发，非授权客户端只会得到混淆数据，因此暂不支持；粘贴这类频道链接会提示「该央视频道暂不受支持」，不会误报为未开播。
+
 ## 验证范围
 
 自动化构建通过不等于真实设备长时间播放通过。Windows 和 Android 仍需分别完成直播、回放、扫码登录、休眠恢复和弱网验收。
@@ -275,6 +285,7 @@ FLV 使用 `mpegts.js` 解复用到 Media Source Extensions；HLS 使用 `HLS.js
 ```bash
 QILIU_LIVE_PROBE=https://www.douyu.com/9999 cargo test --manifest-path src-tauri/Cargo.toml probe_live_source -- --ignored --nocapture
 QILIU_LIVE_PROBE=https://live.douyin.com/房间号 cargo test --manifest-path src-tauri/Cargo.toml probe_live_source -- --ignored --nocapture
+QILIU_LIVE_PROBE=https://tv.cctv.com/live/cctv1/ cargo test --manifest-path src-tauri/Cargo.toml probe_live_source -- --ignored --nocapture
 ```
 
 该检查验证解析与媒体首段数据；客户端画面、声音、画质切换和长时间播放仍需在对应系统实际验收。

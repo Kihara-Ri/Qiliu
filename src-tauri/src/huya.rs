@@ -136,6 +136,10 @@ impl HuyaClient {
             string_at(data, &["profileInfo", "avatar180"]),
             string_at(data, &["liveData", "avatar180"]),
         );
+        let cover_url = non_empty_or(
+            string_at(data, &["liveData", "screenshot"]),
+            string_at(data, &["liveData", "gameCover"]),
+        );
         let canonical_room = string_at(data, &["liveData", "profileRoom"]);
         let room_id = if canonical_room.is_empty() {
             room_id
@@ -181,6 +185,7 @@ impl HuyaClient {
                 title,
                 anchor,
                 avatar_url,
+                cover_url,
                 is_live: false,
                 is_replay: true,
                 url,
@@ -208,6 +213,7 @@ impl HuyaClient {
                 title,
                 anchor,
                 avatar_url,
+                cover_url,
                 is_live: false,
                 is_replay: false,
                 url: None,
@@ -243,6 +249,7 @@ impl HuyaClient {
             title,
             anchor,
             avatar_url,
+            cover_url,
             is_live: true,
             is_replay: false,
             url: Some(url),

@@ -179,6 +179,7 @@ impl DouyinClient {
         stream.title = common::text(&data["title"]);
         stream.anchor = common::text(&data["owner"]["nickname"]);
         stream.avatar_url = common::text(&data["owner"]["avatar_thumb"]["url_list"][0]);
+        stream.cover_url = common::text(&data["cover"]["url_list"][0]);
         stream.is_live = live_status(&data)?;
         if stream.is_live {
             common::select(&mut stream, &candidates(&data), line, quality)?;

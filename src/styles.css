@@ -63,7 +63,8 @@ button {
   background: var(--ground);
 }
 
-#live-video {
+#live-video,
+.live-video {
   position: absolute;
   inset: 0;
   z-index: 0;
@@ -72,6 +73,11 @@ button {
   object-fit: contain;
   background: var(--ground);
   outline: none;
+}
+
+.live-video-preparing {
+  opacity: 0;
+  pointer-events: none;
 }
 
 .player-wash {

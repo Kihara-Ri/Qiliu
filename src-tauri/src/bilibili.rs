@@ -110,7 +110,7 @@ impl BilibiliClient {
             .filter(|value| *value > 0)
             .unwrap_or_default();
 
-        let (anchor, avatar_url) = self.resolve_anchor(uid, avatar_fallback).await;
+        let (anchor, avatar_url) = self.resolve_anchor(uid, avatar_fallback.clone()).await;
         let source_url = format!("https://live.bilibili.com/{room_id}");
         let is_live = live_status == 1;
         let is_replay = live_status == 2;
@@ -124,6 +124,7 @@ impl BilibiliClient {
                 title,
                 anchor,
                 avatar_url,
+                cover_url: avatar_fallback,
                 is_live: false,
                 is_replay: false,
                 url: None,
@@ -179,6 +180,7 @@ impl BilibiliClient {
             title,
             anchor,
             avatar_url,
+            cover_url: avatar_fallback,
             is_live,
             is_replay,
             url: Some(candidate.url.clone()),

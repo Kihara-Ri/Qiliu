@@ -187,3 +187,43 @@ describe("Douyu and Douyin sources", () => {
     expect(readSourceLibrary(storage).favorites.map(f => f.platform)).toEqual(["douyin", "douyu", "bilibili", "huya"]);
   });
 });
+
+describe("CCTV channel sources", () => {
+  it.each([
+    ["https://tv.cctv.com/live/cctv1/", "cctv:cctv1", "https://tv.cctv.com/live/cctv1/"],
+    ["https://tv.cctv.com/live/cctv5plus/index.shtml", "cctv:cctv5plus", "https://tv.cctv.com/live/cctv5plus/"],
+    ["看新闻 https://tv.cctv.com/live/cctv13/?spm_id=1，正在直播", "cctv:cctv13", "https://tv.cctv.com/live/cctv13/"],
+    ["https://www.cctv.com/live/cctvjilu/", "cctv:cctvjilu", "https://tv.cctv.com/live/cctvjilu/"],
+  ])("normalizes %s", (input, id, source) => {
+    expect(normalizeLiveSource(input)).toMatchObject({
+      ok: true,
+      id,
+      source,
+      platform: "cctv",
+      platformLabel: "央视",
+    });
+  });
+  it.each([
+    "https://tv.cctv.com/2026/01/01/VIDEO.shtml",
+    "https://tv.cctv.com/lm/cctv1/",
+    "https://tv.cctv.com/live/",
+    "https://cctv.com.evil.test/live/cctv1/",
+    "https://tv.cctv.com:8080/live/cctv1/",
+  ])("rejects unsupported source %s", (input) => {
+    expect(normalizeLiveSource(input).ok).toBe(false);
+  });
+  it("keeps cctv favorites playable across restarts", () => {
+    const normalized = normalizeLiveSource("https://tv.cctv.com/live/cctv1/");
+    if (!normalized.ok) throw new Error(normalized.message);
+    const storage = memoryStorage();
+    let library = addOrActivateSource(emptySourceLibrary(), normalized, 1);
+    library = updateActiveFavoriteMetadata(library, { platform: "cctv", anchor: "CCTV-1 综合", title: "CCTV-1 综合" });
+    writeSourceLibrary(storage, library);
+    expect(readSourceLibrary(storage).favorites[0]).toMatchObject({
+      id: "cctv:cctv1",
+      platform: "cctv",
+      platformLabel: "央视",
+      anchor: "CCTV-1 综合",
+    });
+  });
+});

@@ -17,6 +17,7 @@ cd "$project_dir"
 if [[ ! -d src-tauri/gen/android ]]; then
   npm run android:init
 fi
+node scripts/sync-android-icons.mjs
 
 if [[ "$mode" == "--release" ]]; then
   node scripts/configure-android-signing.mjs

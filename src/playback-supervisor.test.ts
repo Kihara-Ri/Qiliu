@@ -1,9 +1,13 @@
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { invoke } from "@tauri-apps/api/core";
+import mpegts from "mpegts.js";
 import { PlaybackSupervisor, type PlaybackStats } from "./playback-supervisor";
 
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
-vi.mock("mpegts.js", () => ({ default: {} }));
+vi.mock("mpegts.js", () => ({ default: {
+  createPlayer: vi.fn(),
+  Events: { ERROR: "error", MEDIA_INFO: "media_info", STATISTICS_INFO: "stats", LOADING_COMPLETE: "complete" },
+} }));
 vi.mock("hls.js", async (importOriginal) => ({
   ...await importOriginal<typeof import("hls.js")>(), default: {},
 }));
@@ -167,4 +171,102 @@ it("uses actual downloaded ranges for stall recovery, not a broader seekable tim
   vi.advanceTimersByTime(15_000);
   expect(video.currentTime).toBeCloseTo(18.05);
   expect(video.play).toHaveBeenCalledOnce();
+});
+
+function huyaStream() {
+  return { ...stream(), platform: "huya", sourceUrl: "https://www.huya.com/196645", roomId: "196645" };
+}
+function warmVideo() {
+  const next = Object.assign(new EventTarget(), {
+    id: "", paused: false, muted: true, volume: 0.7,
+    removeAttribute: vi.fn(), remove: vi.fn(), pause: vi.fn(), load: vi.fn(),
+    classList: { add: vi.fn(), remove: vi.fn() },
+    currentTime: 0, buffered: { length: 1, start: () => 0, end: () => 2 },
+    play: vi.fn(),
+  }) as unknown as HTMLVideoElement;
+  vi.mocked(next.play).mockImplementation(async () => { next.dispatchEvent(new Event("playing")); });
+  return next;
+}
+function setupWarmPlayer(next: HTMLVideoElement) {
+  const handlers = new Map<string, (...args: unknown[]) => void>();
+  const player = { on: vi.fn((event, cb) => handlers.set(event, cb)),
+    off: vi.fn((event) => handlers.delete(event)), attachMediaElement: vi.fn(),
+    load: vi.fn(), destroy: vi.fn(), unload: vi.fn(), detachMediaElement: vi.fn() };
+  vi.mocked(mpegts.createPlayer).mockReturnValue(player as never);
+  Object.assign(video, { cloneNode: () => next, after: vi.fn(), remove: vi.fn(), id: "live-video", volume: 0.4, muted: false });
+  return { player, handlers };
+}
+const warm = () => (supervisor as unknown as { prepareHuyaContinuation: () => Promise<void> }).prepareHuyaContinuation();
+
+it("hands off Huya only after replacement frames and buffer exist without clearing the playing video", async () => {
+  vi.mocked(invoke).mockResolvedValue(huyaStream());
+  supervisor.start(huyaStream().sourceUrl);
+  await settle();
+  const next = warmVideo();
+  const { player } = setupWarmPlayer(next);
+  // Start with too little buffer; an initial playing event alone is not enough.
+  let reserve = 0.2;
+  next.buffered.end = () => reserve;
+  vi.mocked(video.pause).mockClear();
+  vi.mocked(video.load).mockClear();
+  const promise = warm();
+  await settle();
+  expect(video.pause).not.toHaveBeenCalled();
+  expect(video.load).not.toHaveBeenCalled();
+  expect(next.muted).toBe(true);
+  reserve = 2;
+  vi.advanceTimersByTime(100);
+  await promise;
+  expect(video.pause).toHaveBeenCalledOnce();
+  expect(video.load).not.toHaveBeenCalled();
+  expect(next.muted).toBe(false);
+  expect(next.volume).toBe(0.4);
+  expect(next.id).toBe("live-video");
+  expect(player.destroy).not.toHaveBeenCalled();
+  expect(samples[samples.length - 1]?.connectionHealth).toContain("同线路续接 1 次");
+});
+
+it("cancels a pending Huya handoff on pause and never resumes from the stale response", async () => {
+  vi.mocked(invoke).mockResolvedValue(huyaStream());
+  supervisor.start(huyaStream().sourceUrl);
+  await settle();
+  let finish!: (value: unknown) => void;
+  vi.mocked(invoke).mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
+  const next = warmVideo();
+  const { player } = setupWarmPlayer(next);
+  const promise = warm();
+  await supervisor.setPaused(true);
+  finish(huyaStream());
+  await promise;
+  expect(player.load).not.toHaveBeenCalled();
+  expect(next.play).not.toHaveBeenCalled();
+});
+
+it("keeps the foreground player intact when warm-up fails", async () => {
+  vi.mocked(invoke).mockResolvedValue(huyaStream());
+  supervisor.start(huyaStream().sourceUrl);
+  await settle();
+  const next = warmVideo();
+  const { player, handlers } = setupWarmPlayer(next);
+  vi.mocked(next.play).mockResolvedValue(undefined);
+  vi.mocked(video.pause).mockClear();
+  const promise = warm();
+  await settle();
+  handlers.get("error")?.();
+  await promise;
+  expect(video.pause).not.toHaveBeenCalled();
+  expect(player.destroy).toHaveBeenCalledOnce();
+  expect(next.remove).toHaveBeenCalledOnce();
+});
+
+it("returns to normal resolution when a Huya broadcast becomes replay during preparation", async () => {
+  vi.mocked(invoke).mockResolvedValue(huyaStream());
+  supervisor.start(huyaStream().sourceUrl);
+  await settle();
+  const replay = { ...huyaStream(), isLive: false, isReplay: true, format: "hls" };
+  vi.mocked(invoke).mockResolvedValue(replay);
+  await warm();
+  expect(samples[samples.length - 1]).toMatchObject({ live: false, replay: true, connecting: false });
+  expect(mpegts.createPlayer).not.toHaveBeenCalled();
+  expect(invoke).toHaveBeenCalledTimes(3);
 });

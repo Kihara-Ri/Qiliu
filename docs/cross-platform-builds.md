@@ -31,14 +31,14 @@ npm run package:current
 - macOS：构建 `.app`，再生成 ad-hoc 签名的 DMG。
 - Windows：在 Windows 主机生成当前用户安装的 NSIS `.exe`。
 
-Android 调试 APK：
+Android 调试 APK（debug 编译，适合日常本地迭代）：
 
 ```bash
 export ANDROID_HOME="$HOME/Library/Android/sdk" # macOS 示例
 npm run package:android
 ```
 
-Android release APK 还需要四个环境变量：
+Android release APK 需要四个环境变量：
 
 ```text
 ANDROID_KEYSTORE_PATH
@@ -53,19 +53,23 @@ ANDROID_STORE_PASSWORD
 npm run package:android:release
 ```
 
+未设置时同样可以运行 `package:android:release`：APK 以 release 模式编译，并改用标准调试密钥（`~/.android/debug.keystore`，缺失时自动创建）签名。无论哪种模式，构建前都会执行 `npm run android:icons` 把 `src-tauri/icons/android` 的启动器图标同步进生成的 Android 工程，避免发布包回退成 Tauri 默认图标。
+
 ## 每次发版
 
+详细提交、构建、上传与下载核验步骤见 [完整发布流程](release-process.md)。
+
 ```bash
-npm run release:prepare -- 1.2.0
+npm run release:prepare -- 1.4.0
 ```
 
 脚本会同步 `package.json`、lockfile、Tauri、Cargo 和关于页版本，并运行完整检查。确认更新记录后提交并推送标签：
 
 ```bash
 git add .
-git commit -m "Release Qiliu 1.2.0"
-git tag v1.2.0
-git push origin main v1.2.0
+git commit -m "Release Qiliu 1.4.0"
+git tag v1.4.0
+git push origin main v1.4.0
 ```
 
 `Release` 工作流会在原生 GitHub 托管环境分别生成：
@@ -74,7 +78,7 @@ git push origin main v1.2.0
 - Windows x64 NSIS 安装程序；
 - Android arm64 APK；
 
-随后把三个安装包上传到同一个 GitHub Release。未配置 Android 签名 Secret 时会明确生成 `-debug.apk`，适合侧载测试，但后续正式版本应使用固定的 release keystore，才能原地覆盖升级。
+随后把三个安装包上传到同一个 GitHub Release。未配置 Android 签名 Secret 时会生成 `-debug.apk`（release 编译、调试密钥签名），适合侧载测试，但后续正式版本应使用固定的 release keystore，才能原地覆盖升级。
 
 ## GitHub Android 签名 Secret
 

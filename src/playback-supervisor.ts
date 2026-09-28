@@ -45,6 +45,7 @@ export interface PlaybackStats {
   anchor: string;
   title: string;
   avatarUrl: string;
+  coverUrl: string;
   qualityLabel: string;
   selectedQualityValue: number;
   qualityOptions: StreamQualityOption[];
@@ -79,6 +80,7 @@ interface LiveStream {
   title: string;
   anchor: string;
   avatarUrl: string;
+  coverUrl: string;
   isLive: boolean;
   isReplay: boolean;
   url: string | null;
@@ -143,8 +145,7 @@ export class PlaybackSupervisor {
   private lastRecoveryReason = "";
   private lastRecoveryAction = "";
   private continuationCount = 0;
-  private preparedContinuation: LiveStream | undefined;
-  private silentContinuation = false;
+  private continuation: { cancel: () => void } | undefined;
   private preferStableBilibiliQuality = false;
   private recentBilibiliBufferEvents: number[] = [];
   private lastBilibiliBufferEventAt = 0;
@@ -153,22 +154,37 @@ export class PlaybackSupervisor {
   private bufferRefillTimer: number | undefined;
 
   constructor(
-    private readonly video: HTMLVideoElement,
+    private video: HTMLVideoElement,
     private readonly onState: StateListener,
     private readonly onStats: StatsListener,
+    private readonly onVideoChanged: (video: HTMLVideoElement) => void = () => {},
   ) {
-    this.video.addEventListener("playing", this.handlePlaying);
-    this.video.addEventListener("timeupdate", this.handleProgress);
-    this.video.addEventListener("waiting", this.handleWaiting);
-    this.video.addEventListener("stalled", this.handleWaiting);
-    this.video.addEventListener("error", this.handleMediaFailure);
-    this.video.addEventListener("ended", this.handleMediaFailure);
+    this.video.autoplay = false;
+    this.bindVideo();
     window.addEventListener("online", this.handleOnline);
     window.addEventListener("offline", this.handleOffline);
     document.addEventListener("visibilitychange", this.handleVisibilityChange);
     this.watchdogTimer = window.setInterval(this.watchPlayback, 3_000);
     this.statsTimer = window.setInterval(this.collectStats, 1_000);
     this.emitEmptyStats();
+  }
+
+  private bindVideo(): void {
+    this.video.addEventListener("playing", this.handlePlaying);
+    this.video.addEventListener("timeupdate", this.handleProgress);
+    this.video.addEventListener("waiting", this.handleWaiting);
+    this.video.addEventListener("stalled", this.handleWaiting);
+    this.video.addEventListener("error", this.handleMediaFailure);
+    this.video.addEventListener("ended", this.handleMediaFailure);
+  }
+
+  private unbindVideo(): void {
+    this.video.removeEventListener("playing", this.handlePlaying);
+    this.video.removeEventListener("timeupdate", this.handleProgress);
+    this.video.removeEventListener("waiting", this.handleWaiting);
+    this.video.removeEventListener("stalled", this.handleWaiting);
+    this.video.removeEventListener("error", this.handleMediaFailure);
+    this.video.removeEventListener("ended", this.handleMediaFailure);
   }
 
   setStatsInspectionActive(active: boolean): void {
@@ -213,29 +229,28 @@ export class PlaybackSupervisor {
     this.restartCurrentSource();
   }
 
-  async togglePause(): Promise<void> {
-    if (!this.video.src) return;
-    if (this.bufferRefillTimer !== undefined) {
-      this.clearBufferRefill();
+  async setPaused(paused: boolean): Promise<void> {
+    if (!this.source) return;
+    if (paused) {
+      if (this.userPaused) return;
       this.userPaused = true;
+      this.clearBufferRefill();
+      this.clearContinuationPreparation();
       this.video.pause();
       this.emit("paused", "已暂停", "按空格继续播放");
-      return;
-    }
-    if (this.video.paused) {
+    } else if (this.userPaused || this.video.paused) {
       this.userPaused = false;
-      try {
-        await this.video.play();
-        this.handlePlaying();
-      } catch (error) {
-        this.scheduleRecovery(errorMessage(error));
+      if (this.video.ended && this.currentStream?.platform === "huya" && this.currentStream.isLive) {
+        await this.prepareHuyaContinuation();
+      } else {
+        try { await this.video.play(); this.handlePlaying(); }
+        catch (error) { this.scheduleRecovery(errorMessage(error)); }
       }
-      return;
     }
+  }
 
-    this.userPaused = true;
-    this.video.pause();
-    this.emit("paused", "已暂停", "按空格继续播放");
+  async togglePause(): Promise<void> {
+    await this.setPaused(this.bufferRefillTimer !== undefined || !this.video.paused);
   }
 
   async unlockSound(): Promise<void> {
@@ -267,12 +282,7 @@ export class PlaybackSupervisor {
     this.stop();
     window.clearInterval(this.watchdogTimer);
     window.clearInterval(this.statsTimer);
-    this.video.removeEventListener("playing", this.handlePlaying);
-    this.video.removeEventListener("timeupdate", this.handleProgress);
-    this.video.removeEventListener("waiting", this.handleWaiting);
-    this.video.removeEventListener("stalled", this.handleWaiting);
-    this.video.removeEventListener("error", this.handleMediaFailure);
-    this.video.removeEventListener("ended", this.handleMediaFailure);
+    this.unbindVideo();
     window.removeEventListener("online", this.handleOnline);
     window.removeEventListener("offline", this.handleOffline);
     document.removeEventListener("visibilitychange", this.handleVisibilityChange);
@@ -280,8 +290,6 @@ export class PlaybackSupervisor {
 
   private async connect(
     generation: number,
-    silentContinuation = false,
-    preparedStream?: LiveStream,
   ): Promise<void> {
     if (generation !== this.generation || !this.source || this.connecting) return;
     if (!navigator.onLine) {
@@ -290,7 +298,6 @@ export class PlaybackSupervisor {
     }
 
     this.connecting = true;
-    this.silentContinuation = silentContinuation;
     const automaticFallback = platformLabelForSource(this.source) === "Bilibili"
       ? 400
       : platformLabelForSource(this.source) === "虎牙" ? FALLBACK_BITRATE_KBPS : 0;
@@ -300,23 +307,20 @@ export class PlaybackSupervisor {
         ? automaticFallback
         : SOURCE_QUALITY_BITRATE_KBPS;
     const platformLabel = platformLabelForSource(this.source);
-    if (!silentContinuation) {
-      this.emit("resolving", "正在取得直播信号", `${platformLabel} · H.264 · 最高可用画质`);
-    }
+    this.emit("resolving", "正在取得直播信号", `${platformLabel} · H.264 · 最高可用画质`);
 
     try {
-      const stream = preparedStream ?? await invoke<LiveStream>("resolve_live_stream", {
-          source: this.source,
-          lineIndex: this.lineCursor,
-          bitrate,
-        });
+      const stream = await invoke<LiveStream>("resolve_live_stream", {
+        source: this.source,
+        lineIndex: this.lineCursor,
+        bitrate,
+      });
       if (generation !== this.generation) return;
       this.currentStream = stream;
       this.collectStats();
 
       if (!stream.url) {
         this.connecting = false;
-        this.silentContinuation = false;
         this.emit(
           "offline",
           stream.isReplay ? stream.title || "回放暂不可用" : stream.title || "直播暂未开始",
@@ -334,25 +338,21 @@ export class PlaybackSupervisor {
         return;
       }
 
-      if (!silentContinuation) {
-        this.emit(
-          "connecting",
-          stream.isReplay ? "正在载入回放" : "正在建立播放",
-          stream.title ||
-            (stream.isReplay
-              ? `${stream.anchor || stream.platformLabel} · 录像回放`
-              : `${stream.anchor || stream.platformLabel} · 线路 ${stream.lineIndex + 1}`),
-        );
-      }
+      this.emit(
+        "connecting",
+        stream.isReplay ? "正在载入回放" : "正在建立播放",
+        stream.title ||
+          (stream.isReplay
+            ? `${stream.anchor || stream.platformLabel} · 录像回放`
+            : `${stream.anchor || stream.platformLabel} · 线路 ${stream.lineIndex + 1}`),
+      );
       await this.playUrl(stream.url, stream.isReplay ? stream.startPositionSeconds : 0);
       if (generation !== this.generation) return;
       this.connecting = false;
       this.handlePlaying();
-      this.silentContinuation = false;
     } catch (error) {
       if (generation !== this.generation) return;
       this.connecting = false;
-      this.silentContinuation = false;
       if (isUnsupportedMedia(error)) {
         this.emit("error", "当前系统不支持直播解码", "此系统不支持所需的 MSE / H.264 播放能力");
         return;
@@ -390,12 +390,13 @@ export class PlaybackSupervisor {
           : startPositionSeconds;
         this.video.currentTime = Math.min(startPositionSeconds, maximum);
       }
-      await withTimeout(this.video.play(), CONNECT_TIMEOUT_MS);
+      if (!this.userPaused) await withTimeout(this.video.play(), CONNECT_TIMEOUT_MS);
     } catch (error) {
+      if (this.userPaused) return;
       if (!isAutoplayBlocked(error)) throw error;
       this.video.muted = true;
       this.mutedByPolicy = true;
-      await withTimeout(this.video.play(), CONNECT_TIMEOUT_MS);
+      if (!this.userPaused) await withTimeout(this.video.play(), CONNECT_TIMEOUT_MS);
     }
   }
 
@@ -404,6 +405,7 @@ export class PlaybackSupervisor {
       const hls = new Hls({
         enableWorker: true,
         lowLatencyMode: false,
+        liveDurationInfinity: Boolean(this.currentStream?.isLive),
         maxBufferLength: 12,
         maxMaxBufferLength: 24,
         backBufferLength: 2,
@@ -446,75 +448,49 @@ export class PlaybackSupervisor {
     }
 
     return new Promise<void>((resolve, reject) => {
-      const isBilibiliLive = this.currentStream?.platform === "bilibili"
-        && this.currentStream.isLive;
-      const player = mpegts.createPlayer(
-        {
-          type: "flv",
-          isLive: true,
-          cors: true,
-          withCredentials: false,
-          hasAudio: true,
-          hasVideo: true,
-          url,
-        },
-        {
-          // Bilibili original quality can deliver many small FLV chunks. Move
-          // transmuxing off the WebView UI thread so MSE appends do not fall
-          // behind while the network itself is still healthy.
-          enableWorker: isBilibiliLive,
-          enableStashBuffer: true,
-          // Use the library's 64 KB initial stash for Bilibili; it adapts to
-          // measured throughput. A fixed 1 MB startup stash delays low-bitrate
-          // streams and is not a media buffer measured in seconds.
-          stashInitialSize: (isBilibiliLive ? 64 : 256) * 1_024,
-          lazyLoad: false,
-          autoCleanupSourceBuffer: true,
-          // Use mpegts.js' conservative live defaults. Keeping only 15 seconds
-          // behind the playhead caused WKWebView to remove SourceBuffer ranges
-          // too close to active playback roughly every 45 seconds.
-          autoCleanupMaxBackwardDuration: 3 * 60,
-          autoCleanupMinBackwardDuration: 2 * 60,
-          liveSync: false,
-          statisticsInfoReportInterval: 1_000,
-          fixAudioTimestampGap: true,
-        },
-      );
+      const player = createFlvPlayer(this.currentStream, url);
       this.mpegtsPlayer = player;
-      let settled = false;
-
-      player.on(mpegts.Events.MEDIA_INFO, () => {
-        if (settled || this.mpegtsPlayer !== player) return;
-        settled = true;
-        resolve();
-      });
-      player.on(mpegts.Events.STATISTICS_INFO, (statistics: unknown) => {
-        if (this.mpegtsPlayer !== player || !isRecord(statistics)) return;
-        const speed = statistics.speed;
-        if (typeof speed === "number" && Number.isFinite(speed) && speed > 0) {
-          this.measuredBitrateKbps = speed * 8;
-        }
-      });
-      player.on(mpegts.Events.LOADING_COMPLETE, () => {
-        if (this.mpegtsPlayer !== player) return;
-        this.handleMpegtsLoadingComplete();
-      });
-      player.on(
-        mpegts.Events.ERROR,
-        (errorType: unknown, errorDetail: unknown, errorInfo: unknown) => {
-          if (this.mpegtsPlayer !== player) return;
-          const message = mpegtsErrorMessage(errorType, errorDetail, errorInfo);
-          if (!settled) {
-            settled = true;
-            reject(new Error(message));
-            return;
-          }
-          if (!this.connecting) this.scheduleRecovery(message);
-        },
-      );
+      this.bindMpegtsEvents(player, resolve, reject);
       player.attachMediaElement(this.video);
       player.load();
     });
+  }
+
+  private bindMpegtsEvents(
+    player: ReturnType<typeof mpegts.createPlayer>,
+    resolve: () => void,
+    reject: (error: Error) => void,
+    settled = false,
+  ): void {
+    player.on(mpegts.Events.MEDIA_INFO, () => {
+      if (settled || this.mpegtsPlayer !== player) return;
+      settled = true;
+      resolve();
+    });
+    player.on(mpegts.Events.STATISTICS_INFO, (statistics: unknown) => {
+      if (this.mpegtsPlayer !== player || !isRecord(statistics)) return;
+      const speed = statistics.speed;
+      if (typeof speed === "number" && Number.isFinite(speed) && speed > 0) {
+        this.measuredBitrateKbps = speed * 8;
+      }
+    });
+    player.on(mpegts.Events.LOADING_COMPLETE, () => {
+      if (this.mpegtsPlayer !== player) return;
+      this.handleMpegtsLoadingComplete();
+    });
+    player.on(
+      mpegts.Events.ERROR,
+      (errorType: unknown, errorDetail: unknown, errorInfo: unknown) => {
+        if (this.mpegtsPlayer !== player) return;
+        const message = mpegtsErrorMessage(errorType, errorDetail, errorInfo);
+        if (!settled) {
+          settled = true;
+          reject(new Error(message));
+          return;
+        }
+        if (!this.connecting) this.scheduleRecovery(message);
+      },
+    );
   }
 
   private handleHlsFragment(hls: Hls, data: FragLoadedData): void {
@@ -550,68 +526,141 @@ export class PlaybackSupervisor {
 
   private scheduleHuyaContinuationPrefetch(): void {
     const stream = this.currentStream;
-    if (
-      this.continuationPrefetchTimer !== undefined ||
-      this.preparedContinuation ||
-      stream?.platform !== "huya" ||
-      !stream.isLive ||
-      stream.format !== "flv"
-    ) {
-      return;
-    }
-
-    const generation = this.generation;
-    const source = this.source;
-    const lineCursor = this.lineCursor;
+    if (this.continuationPrefetchTimer !== undefined || this.continuation
+      || stream?.platform !== "huya" || !stream.isLive || stream.format !== "flv") return;
     this.continuationPrefetchTimer = window.setTimeout(() => {
       this.continuationPrefetchTimer = undefined;
-      const bitrate = this.requestedQualityValue > 0
-        ? this.requestedQualityValue
-        : this.attempt >= 3
-          ? FALLBACK_BITRATE_KBPS
-          : SOURCE_QUALITY_BITRATE_KBPS;
-      void invoke<LiveStream>("resolve_live_stream", {
-        source,
-        lineIndex: lineCursor,
-        bitrate,
-      }).then((prepared) => {
-        if (
-          generation === this.generation &&
-          source === this.source &&
-          lineCursor === this.lineCursor &&
-          prepared.platform === "huya" &&
-          prepared.isLive &&
-          prepared.format === "flv" &&
-          prepared.url
-        ) {
-          this.preparedContinuation = prepared;
-        }
-      }).catch(() => {
-        // Natural EOF will resolve synchronously if prefetch was unavailable.
-      });
+      if (!this.userPaused) void this.prepareHuyaContinuation();
     }, HUYA_CONTINUATION_PREFETCH_MS);
   }
 
   private handleMpegtsLoadingComplete(): void {
-    const stream = this.currentStream;
-    if (
-      stream?.platform !== "huya" ||
-      !stream.isLive ||
-      stream.format !== "flv" ||
-      this.connecting ||
-      this.userPaused
-    ) {
-      return;
-    }
+    if (this.currentStream?.platform !== "huya" || !this.currentStream.isLive
+      || this.connecting || this.userPaused) return;
+    // EOF may arrive before the warm-up timer. Keep the last frame and remaining
+    // buffer while preparing the replacement instead of clearing the video src.
+    void this.prepareHuyaContinuation();
+  }
 
-    const prepared = this.preparedContinuation;
-    this.preparedContinuation = undefined;
+  private async prepareHuyaContinuation(): Promise<void> {
+    if (this.continuation || this.userPaused || !this.currentStream) return;
     window.clearTimeout(this.continuationPrefetchTimer);
     this.continuationPrefetchTimer = undefined;
-    this.continuationCount += 1;
-    this.lastRecoveryAction = "同线路续接";
-    this.lastRecoveryReason = "虎牙长连接自然结束";
-    void this.connect(this.generation, true, prepared);
+    const generation = this.generation;
+    const oldVideo = this.video;
+    const oldPlayer = this.mpegtsPlayer;
+    let cancelled = false;
+    let nextVideo: HTMLVideoElement | undefined;
+    let nextPlayer: ReturnType<typeof mpegts.createPlayer> | undefined;
+    let cancelReady = () => {};
+    const pending = { cancel: () => {
+      cancelled = true;
+      cancelReady();
+      nextVideo?.pause();
+      nextPlayer?.destroy();
+      nextVideo?.remove();
+    } };
+    this.continuation = pending;
+    try {
+      const stream = await invoke<LiveStream>("resolve_live_stream", {
+        source: this.source,
+        lineIndex: this.currentStream.lineIndex,
+        bitrate: this.requestedQualityValue || (this.attempt >= 3 ? FALLBACK_BITRATE_KBPS : 0),
+      });
+      if (cancelled || generation !== this.generation) return;
+      if (!stream.url || !stream.isLive || stream.format !== "flv") {
+        // The room may have ended its broadcast or entered replay during warm-up.
+        this.continuation = undefined;
+        await this.connect(generation);
+        return;
+      }
+      const replacement = oldVideo.cloneNode(false) as HTMLVideoElement;
+      nextVideo = replacement;
+      replacement.removeAttribute("id");
+      replacement.removeAttribute("src");
+      replacement.classList.add("live-video", "live-video-preparing");
+      replacement.autoplay = false;
+      replacement.muted = true;
+      replacement.volume = oldVideo.volume;
+      oldVideo.after(replacement);
+      const player = createFlvPlayer(stream, stream.url);
+      nextPlayer = player;
+      await new Promise<void>((resolve, reject) => {
+        let frameReady = false;
+        let frameCallback: number | undefined;
+        let finished = false;
+        const cleanup = () => {
+          window.clearInterval(poll);
+          window.clearTimeout(timeout);
+          replacement.removeEventListener("playing", playing);
+          replacement.removeEventListener("error", failed);
+          player.off(mpegts.Events.ERROR, failed);
+          if (frameCallback !== undefined) replacement.cancelVideoFrameCallback(frameCallback);
+        };
+        const finish = (error?: Error) => {
+          if (finished) return;
+          finished = true;
+          cleanup();
+          if (error) reject(error); else resolve();
+        };
+        const check = () => {
+          if (frameReady && !replacement.paused && (bufferedAhead(replacement) ?? 0) >= 1) finish();
+        };
+        const playing = () => {
+          if (!replacement.requestVideoFrameCallback) frameReady = true;
+          check();
+        };
+        const failed = () => finish(new Error("虎牙下一条连接未能准备好"));
+        const poll = window.setInterval(check, 100);
+        const timeout = window.setTimeout(failed, CONNECT_TIMEOUT_MS);
+        cancelReady = () => finish(new Error("续接已取消"));
+        replacement.addEventListener("playing", playing);
+        replacement.addEventListener("error", failed);
+        player.on(mpegts.Events.ERROR, failed);
+        if (replacement.requestVideoFrameCallback) {
+          frameCallback = replacement.requestVideoFrameCallback(() => { frameReady = true; check(); });
+        }
+        player.attachMediaElement(replacement);
+        player.load();
+        void replacement.play().catch(failed);
+      });
+      if (cancelled || generation !== this.generation || this.userPaused) return;
+      // Commit only after a decoded frame and a playable reserve exist. Never
+      // unload the active element to prepare its replacement.
+      this.unbindVideo();
+      oldVideo.pause();
+      replacement.id = oldVideo.id;
+      oldVideo.removeAttribute("id");
+      replacement.muted = oldVideo.muted;
+      replacement.volume = oldVideo.volume;
+      replacement.classList.remove("live-video-preparing");
+      this.video = replacement;
+      this.mpegtsPlayer = player;
+      this.currentStream = stream;
+      this.bindVideo();
+      this.onVideoChanged(replacement);
+      this.bindMpegtsEvents(player, () => {}, () => {}, true);
+      oldPlayer?.destroy();
+      oldVideo.remove();
+      nextVideo = undefined;
+      nextPlayer = undefined;
+      this.continuation = undefined;
+      this.continuationCount += 1;
+      this.lastRecoveryAction = "预加载续接";
+      this.lastRecoveryReason = "虎牙有限时长连接轮换";
+      this.resetStatsSample();
+      this.handlePlaying();
+    } catch {
+      if (cancelled || generation !== this.generation) return;
+      // A failed warm-up must not interrupt the healthy foreground connection.
+      // Retry while it still has frames; normal failure recovery remains intact.
+      pending.cancel();
+      this.continuation = undefined;
+      this.continuationPrefetchTimer = window.setTimeout(() => {
+        this.continuationPrefetchTimer = undefined;
+        if (!this.userPaused) void this.prepareHuyaContinuation();
+      }, 5_000);
+    }
   }
 
   private readonly handlePlaying = (): void => {
@@ -630,7 +679,7 @@ export class PlaybackSupervisor {
       this.attempt = 0;
     }, STABLE_RESET_MS);
     this.scheduleHuyaContinuationPrefetch();
-    if (!this.silentContinuation) this.emitPlayingState();
+    this.emitPlayingState();
     this.collectStats();
   };
 
@@ -752,6 +801,10 @@ export class PlaybackSupervisor {
     ) {
       return;
     }
+    if (this.currentStream?.platform === "huya" && this.currentStream.isLive && this.video.ended) {
+      void this.prepareHuyaContinuation();
+      return;
+    }
     this.scheduleRecovery(mediaErrorMessage(this.video.error));
   };
 
@@ -807,7 +860,7 @@ export class PlaybackSupervisor {
   }
 
   private scheduleRecovery(reason: string): void {
-    if (!this.source || this.reconnectTimer !== undefined) return;
+    if (!this.source || this.userPaused || this.reconnectTimer !== undefined) return;
     this.clearBufferRefill();
     if (!navigator.onLine) {
       this.handleOffline();
@@ -943,6 +996,7 @@ export class PlaybackSupervisor {
       anchor: stream.anchor,
       title: stream.title,
       avatarUrl: stream.avatarUrl,
+      coverUrl: stream.coverUrl,
       qualityLabel: stream.qualityLabel,
       selectedQualityValue: this.requestedQualityValue,
       qualityOptions: stream.qualityOptions,
@@ -983,6 +1037,7 @@ export class PlaybackSupervisor {
       anchor: "",
       title: "",
       avatarUrl: "",
+      coverUrl: "",
       qualityLabel: "",
       selectedQualityValue: 0,
       qualityOptions: [],
@@ -1032,8 +1087,8 @@ export class PlaybackSupervisor {
     this.continuationCount = 0;
     this.lastRecoveryReason = "";
     this.lastRecoveryAction = "";
-    this.preparedContinuation = undefined;
-    this.silentContinuation = false;
+    this.continuation?.cancel();
+    this.continuation = undefined;
     this.preferStableBilibiliQuality = false;
     this.recentBilibiliBufferEvents = [];
     this.lastBilibiliBufferEventAt = 0;
@@ -1068,7 +1123,8 @@ export class PlaybackSupervisor {
   private clearContinuationPreparation(): void {
     window.clearTimeout(this.continuationPrefetchTimer);
     this.continuationPrefetchTimer = undefined;
-    this.preparedContinuation = undefined;
+    this.continuation?.cancel();
+    this.continuation = undefined;
   }
 
   private restartCurrentSource(): void {
@@ -1116,6 +1172,7 @@ export class PlaybackSupervisor {
   }
 
   private destroyPlayers(): void {
+    this.clearContinuationPreparation();
     this.clearBufferRefill();
     this.destroyHls();
     const player = this.mpegtsPlayer;
@@ -1298,4 +1355,41 @@ function bufferedResumePosition(video: HTMLVideoElement, reserve: number): numbe
     }
   }
   return null;
+}
+
+function createFlvPlayer(stream: LiveStream | undefined, url: string): ReturnType<typeof mpegts.createPlayer> {
+  const isBilibiliLive = stream?.platform === "bilibili"
+    && stream.isLive;
+  return mpegts.createPlayer(
+    {
+      type: "flv",
+      isLive: true,
+      cors: true,
+      withCredentials: false,
+      hasAudio: true,
+      hasVideo: true,
+      url,
+    },
+    {
+      // Bilibili original quality can deliver many small FLV chunks. Move
+      // transmuxing off the WebView UI thread so MSE appends do not fall
+      // behind while the network itself is still healthy.
+      enableWorker: isBilibiliLive,
+      enableStashBuffer: true,
+      // Use the library's 64 KB initial stash for Bilibili; it adapts to
+      // measured throughput. A fixed 1 MB startup stash delays low-bitrate
+      // streams and is not a media buffer measured in seconds.
+      stashInitialSize: (isBilibiliLive ? 64 : 256) * 1_024,
+      lazyLoad: false,
+      autoCleanupSourceBuffer: true,
+      // Use mpegts.js' conservative live defaults. Keeping only 15 seconds
+      // behind the playhead caused WKWebView to remove SourceBuffer ranges
+      // too close to active playback roughly every 45 seconds.
+      autoCleanupMaxBackwardDuration: 3 * 60,
+      autoCleanupMinBackwardDuration: 2 * 60,
+      liveSync: false,
+      statisticsInfoReportInterval: 1_000,
+      fixAudioTimestampGap: true,
+    },
+  );
 }

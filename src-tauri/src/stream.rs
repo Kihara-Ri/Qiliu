@@ -24,6 +24,7 @@ pub struct LiveStream {
     pub title: String,
     pub anchor: String,
     pub avatar_url: String,
+    pub cover_url: String,
     pub is_live: bool,
     pub is_replay: bool,
     pub url: Option<String>,

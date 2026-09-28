@@ -2,6 +2,7 @@
 mod android_context;
 mod bilibili;
 mod bilibili_auth;
+mod cctv;
 mod huya;
 mod douyu;
 mod douyin;
@@ -12,6 +13,7 @@ mod stream;
 
 use bilibili::BilibiliClient;
 use bilibili_auth::{BilibiliAuthStatus, BilibiliQrLogin, BilibiliQrPoll};
+use cctv::CctvClient;
 use huya::HuyaClient;
 use douyu::DouyuClient;
 use douyin::DouyinClient;
@@ -51,6 +53,7 @@ struct LiveClients {
     bilibili: BilibiliClient,
     douyu: DouyuClient,
     douyin: DouyinClient,
+    cctv: CctvClient,
 }
 
 impl LiveClients {
@@ -60,6 +63,7 @@ impl LiveClients {
             bilibili: BilibiliClient::new()?,
             douyu: DouyuClient::new()?,
             douyin: DouyinClient::new()?,
+            cctv: CctvClient::new()?,
         })
     }
 
@@ -74,6 +78,7 @@ impl LiveClients {
             SourcePlatform::Bilibili => self.bilibili.resolve(source, line_index, bitrate).await,
             SourcePlatform::Douyu => self.douyu.resolve(source, line_index, bitrate).await,
             SourcePlatform::Douyin => self.douyin.resolve(source, line_index, bitrate).await,
+            SourcePlatform::Cctv => self.cctv.resolve(source, line_index, bitrate).await,
         }
     }
 }
@@ -84,6 +89,7 @@ enum SourcePlatform {
     Bilibili,
     Douyu,
     Douyin,
+    Cctv,
 }
 
 fn source_platform(source: &str) -> Result<SourcePlatform, String> {
@@ -103,7 +109,8 @@ fn source_platform(source: &str) -> Result<SourcePlatform, String> {
     }
     if ["douyu.com", "www.douyu.com", "m.douyu.com"].contains(&host.as_str()) { return Ok(SourcePlatform::Douyu); }
     if ["live.douyin.com", "v.douyin.com"].contains(&host.as_str()) { return Ok(SourcePlatform::Douyin); }
-    Err("目前支持虎牙、Bilibili、斗鱼和抖音直播间链接".to_string())
+    if ["tv.cctv.com", "www.cctv.com", "live.cctv.com", "cctv.com"].contains(&host.as_str()) { return Ok(SourcePlatform::Cctv); }
+    Err("目前支持虎牙、Bilibili、斗鱼、抖音和央视频道直播间链接".to_string())
 }
 
 #[tauri::command]
@@ -113,6 +120,7 @@ async fn get_live_status(clients: State<'_, LiveClients>, source: String) -> Res
         SourcePlatform::Bilibili => clients.bilibili.is_live(&source).await,
         SourcePlatform::Douyu => clients.douyu.is_live(&source).await,
         SourcePlatform::Douyin => clients.douyin.is_live(&source).await,
+        SourcePlatform::Cctv => clients.cctv.is_live(&source).await,
     }
 }
 
@@ -221,6 +229,10 @@ mod tests {
         assert_eq!(source_platform("https://www.douyu.com/9999").unwrap(), SourcePlatform::Douyu);
         assert_eq!(source_platform("https://live.douyin.com/123456").unwrap(), SourcePlatform::Douyin);
         assert_eq!(source_platform("https://v.douyin.com/AbCd/").unwrap(), SourcePlatform::Douyin);
+        assert_eq!(
+            source_platform("https://tv.cctv.com/live/cctv1/").unwrap(),
+            SourcePlatform::Cctv
+        );
         assert!(source_platform("https://example.com/5050").is_err());
     }
 }

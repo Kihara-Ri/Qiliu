@@ -112,6 +112,9 @@ jobs:
       - name: Initialize Android project
         run: npm run android:init
 
+      - name: Sync launcher icons
+        run: node scripts/sync-android-icons.mjs
+
       - name: Restore release keystore
         if: env.ANDROID_KEYSTORE_BASE64 != ''
         shell: bash
@@ -119,17 +122,11 @@ jobs:
           printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/qiliu-upload.jks"
           echo "ANDROID_KEYSTORE_PATH=$RUNNER_TEMP/qiliu-upload.jks" >> "$GITHUB_ENV"
 
-      - name: Configure release signing
-        if: env.ANDROID_KEYSTORE_BASE64 != ''
+      - name: Configure APK signing
         run: node scripts/configure-android-signing.mjs
 
-      - name: Build signed APK
-        if: env.ANDROID_KEYSTORE_BASE64 != ''
+      - name: Build APK
         run: npm run tauri -- android build --apk --target aarch64 --ci
-
-      - name: Build debug-signed APK
-        if: env.ANDROID_KEYSTORE_BASE64 == ''
-        run: npm run tauri -- android build --debug --apk --target aarch64 --ci
 
       - name: Collect APK
         shell: bash
@@ -140,6 +137,22 @@ jobs:
           suffix=""
           if [[ -z "${ANDROID_KEYSTORE_PATH:-}" ]]; then suffix="-debug"; fi
           cp "$apk" "release-assets/Qiliu-$version-Android-arm64${suffix}.apk"
+
+      - name: Verify launcher icon
+        shell: bash
+        run: |
+          # Release APKs obfuscate resource names, so verify the built project's
+          # res/ instead: it must match the committed icons, not the Tauri
+          # template defaults that `tauri android init` generates.
+          for f in ic_launcher.png ic_launcher_foreground.png ic_launcher_round.png; do
+            expected="$(md5sum < "src-tauri/icons/android/mipmap-xxxhdpi/$f" | awk '{print $1}')"
+            actual="$(md5sum < "src-tauri/gen/android/app/src/main/res/mipmap-xxxhdpi/$f" | awk '{print $1}')"
+            if [[ -z "$actual" || "$expected" != "$actual" ]]; then
+              echo "gen/android 启动器图标与 src-tauri/icons/android 不一致（$f），构建将使用 Tauri 默认图标。"
+              exit 1
+            fi
+          done
+          echo "Android 启动器图标与仓库图标一致。"
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
@@ -163,6 +176,11 @@ jobs:
           pattern: installer-*
           path: release-assets
           merge-multiple: true
+
+      - name: Include investigation and release procedure
+        run: |
+          cp docs/live-playback-fix-2026-09-28.md release-assets/Qiliu-live-playback-report.md
+          cp docs/release-process.md release-assets/Qiliu-release-process.md
 
       - name: Publish release
         env:

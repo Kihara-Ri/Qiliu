@@ -1,3 +1,4 @@
+import { LiveMediaSession } from "./live-media-session";
 import { setupFloatingControls } from "./floating-controls";
 import { StreamSelect } from "./stream-select";
 import "./styles.css";
@@ -31,7 +32,7 @@ const MUTED_STORAGE_KEY = "simple-live.muted.v1";
 const VOLUME_COLLAPSE_DELAY_MS = 160;
 
 const app = element<HTMLElement>("app");
-const video = element<HTMLVideoElement>("live-video");
+let video = element<HTMLVideoElement>("live-video");
 const windowDragRegion = element<HTMLElement>("window-drag-region");
 const windowMinimize = element<HTMLButtonElement>("window-minimize");
 const windowMaximize = element<HTMLButtonElement>("window-maximize");
@@ -164,7 +165,18 @@ video.volume = lastAudibleVolume;
 video.muted = window.localStorage.getItem(MUTED_STORAGE_KEY) === "true";
 renderVolumeControl();
 
-const supervisor = new PlaybackSupervisor(video, renderPlaybackState, renderPlaybackStats);
+const mediaSession = new LiveMediaSession(
+  () => { void supervisor.setPaused(false); },
+  () => { void supervisor.setPaused(true); },
+);
+const supervisor = new PlaybackSupervisor(video, renderPlaybackState, renderPlaybackStats, replacement => {
+  video.removeEventListener("volumechange", renderVolumeControl);
+  video.removeEventListener("click", handleVideoClick);
+  video = replacement;
+  video.addEventListener("volumechange", renderVolumeControl);
+  video.addEventListener("click", handleVideoClick);
+  renderVolumeControl();
+});
 setPanelSection("info");
 writeSourceLibrary(window.localStorage, library);
 renderFavorites();
@@ -294,9 +306,10 @@ document.addEventListener("focusin", () => {
 volumeSlider.addEventListener("input", () => void setVolumeFromSlider());
 video.addEventListener("volumechange", renderVolumeControl);
 soundUnlock.addEventListener("click", () => void restoreSound());
-video.addEventListener("click", () => {
+video.addEventListener("click", handleVideoClick);
+function handleVideoClick(): void {
   if (!soundUnlock.hidden) void restoreSound();
-});
+}
 app.addEventListener("dblclick", (event) => {
   if (coarsePointer.matches) return;
   const target = event.target;
@@ -344,8 +357,16 @@ window.addEventListener("beforeunload", () => {
   supervisor.destroy();
 });
 
+function syncMediaSession(): void {
+  const stats = latestPlaybackStats;
+  const active = stats && (stats.live || stats.replay);
+  mediaSession.update(active ? stats : null,
+    !active ? "none" : currentPhase === "paused" ? "paused" : "playing");
+}
+
 function renderPlaybackState(state: PlaybackViewState): void {
   currentPhase = state.phase;
+  syncMediaSession();
   app.dataset.phase = state.phase;
   statusEyebrow.textContent = eyebrowFor(state.phase);
   statusTitle.textContent = state.headline;
@@ -372,6 +393,7 @@ function renderPlaybackState(state: PlaybackViewState): void {
 
 function renderPlaybackStats(stats: PlaybackStats): void {
   latestPlaybackStats = stats.active ? stats : null;
+  syncMediaSession();
   streamInspector.hidden = !stats.active;
   monitorEmpty.hidden = stats.active;
   monitorHeading.dataset.state = stats.active && (stats.live || stats.replay) ? "active" : "idle";
