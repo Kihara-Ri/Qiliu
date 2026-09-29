@@ -17,7 +17,7 @@ jobs:
         include:
           - name: macOS
             os: macos-14
-            bundles: dmg
+            bundles: app
           - name: Windows
             os: windows-latest
             bundles: nsis
@@ -51,8 +51,12 @@ jobs:
         shell: bash
         run: |
           version="${GITHUB_REF_NAME#v}"
+          # Seal the complete app bundle, not only its Rust executable, before
+          # creating the DMG. An unsigned Tauri bundle can retain an incomplete
+          # executable signature and fail codesign resource verification.
+          npm run package:macos
           mkdir -p release-assets
-          dmg="$(find src-tauri/target/release/bundle/dmg -type f -name '*.dmg' | head -n 1)"
+          dmg="release/栖流 $version.dmg"
           hdiutil verify "$dmg"
           cp "$dmg" "release-assets/Qiliu-$version-macOS-${RUNNER_ARCH}.dmg"
 

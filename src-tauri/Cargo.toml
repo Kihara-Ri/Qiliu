@@ -1,6 +1,6 @@
 [package]
 name = "qiliu"
-version = "1.4.0"
+version = "1.4.1"
 description = "Qiliu, a focused Huya and Bilibili live player built with Tauri"
 authors = ["Kihara-Ri"]
 edition = "2021"

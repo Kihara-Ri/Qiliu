@@ -1,5 +1,14 @@
 # 更新记录
 
+## 1.4.1 - 2026-09-29
+
+- 修复 GitHub macOS 安装包的资源签名不完整：先构建 app，对完整 bundle 执行 ad-hoc 签名并严格验证，再生成 DMG；不再只以镜像完整性判定可交付。
+- 包含 1.4.0 的虎牙预加载续接、系统播放信息、房间封面、央视频道和 Android 发布修正；三个平台均重新编译为 1.4.1。
+- Android 仍为 release 编译、调试密钥签名测试包；macOS 未经 Apple 公证。Windows 和 Android 尚未完成真机长时间播放验收。
+- macOS 系统“正在播放”面板的按钮和封面尺寸仍待视觉验收，未将其标注为全部完成。
+- [故障与修复报告](https://github.com/Kihara-Ri/Qiliu/blob/v1.4.1/docs/live-playback-fix-2026-09-28.md)
+- [提交、构建、上传及验收流程](https://github.com/Kihara-Ri/Qiliu/blob/v1.4.1/docs/release-process.md)
+
 ## 1.4.0 - 2026-09-28
 
 ### 直播播放与系统控件

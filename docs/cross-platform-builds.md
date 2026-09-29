@@ -60,16 +60,16 @@ npm run package:android:release
 详细提交、构建、上传与下载核验步骤见 [完整发布流程](release-process.md)。
 
 ```bash
-npm run release:prepare -- 1.4.0
+npm run release:prepare -- 1.4.1
 ```
 
 脚本会同步 `package.json`、lockfile、Tauri、Cargo 和关于页版本，并运行完整检查。确认更新记录后提交并推送标签：
 
 ```bash
 git add .
-git commit -m "Release Qiliu 1.4.0"
-git tag v1.4.0
-git push origin main v1.4.0
+git commit -m "Release Qiliu 1.4.1"
+git tag v1.4.1
+git push origin main v1.4.1
 ```
 
 `Release` 工作流会在原生 GitHub 托管环境分别生成：

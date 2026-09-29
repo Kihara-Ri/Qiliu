@@ -179,10 +179,10 @@ npm run package:android
 准备新版本并同步所有版本号（以下以 `1.3.2` 为示例，请替换为待发布版本）：
 
 ```bash
-npm run release:prepare -- 1.4.0
+npm run release:prepare -- 1.4.1
 ```
 
-推送对应的 `v1.4.0` 标签后，GitHub Actions 会在原生 macOS、Windows 与 Android 环境构建并把安装包集中发布到同一个 Release。提交、构建、上传与下载核验见 [完整发布流程](docs/release-process.md)。完整环境、签名和故障排查见 [跨平台界面与构建](docs/cross-platform-builds.md)。
+推送对应的 `v1.4.1` 标签后，GitHub Actions 会在原生 macOS、Windows 与 Android 环境构建并把安装包集中发布到同一个 Release。提交、构建、上传与下载核验见 [完整发布流程](docs/release-process.md)。完整环境、签名和故障排查见 [跨平台界面与构建](docs/cross-platform-builds.md)。
 
 真实直播长时间播放测试依赖当前房间状态、平台接口和网络环境，不包含在默认自动化测试中。发布新版本前应分别用一个正在直播的虎牙和 Bilibili 房间进行持续播放验证。
 
