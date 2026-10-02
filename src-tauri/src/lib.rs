@@ -1,5 +1,6 @@
 #[cfg(target_os = "android")]
 mod android_context;
+mod app_update;
 mod bilibili;
 mod bilibili_auth;
 mod cctv;
@@ -9,6 +10,7 @@ mod douyin;
 mod douyin_sign;
 mod live_source;
 mod huya_wup;
+mod patch_hub;
 mod stream;
 
 use bilibili::BilibiliClient;
@@ -18,7 +20,7 @@ use huya::HuyaClient;
 use douyu::DouyuClient;
 use douyin::DouyinClient;
 use stream::LiveStream;
-use tauri::State;
+use tauri::{Manager, State};
 use url::Url;
 
 fn initialize_secure_store() -> Result<(), String> {
@@ -161,19 +163,29 @@ async fn logout_bilibili(clients: State<'_, LiveClients>) -> Result<BilibiliAuth
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let live_clients = LiveClients::new().expect("failed to initialize live-source HTTP clients");
-    let builder = tauri::Builder::default().plugin(tauri_plugin_clipboard_manager::init());
+    let builder = tauri::Builder::default()
+        .plugin(tauri_plugin_clipboard_manager::init())
+        .plugin(tauri_plugin_opener::init());
+
+    #[cfg(desktop)]
+    let builder = builder.plugin(tauri_plugin_updater::Builder::new().build());
 
     #[cfg(target_os = "macos")]
     let builder = builder.enable_macos_default_menu(false);
 
     builder
-        .setup(|_| {
+        .register_uri_scheme_protocol("qiliu-patch", patch_hub::handle_protocol_request)
+        .setup(|app| {
             // Android's Activity is not available before Builder::run. Secure
             // storage is optional: report its failure through account commands,
             // rather than aborting the entire player at launch.
             if let Err(error) = initialize_secure_store() {
                 eprintln!("Qiliu secure store unavailable: {error}");
             }
+            app.manage(patch_hub::PatchHub::initialize(
+                app.handle(),
+                app.package_info().version.to_string(),
+            ));
             Ok(())
         })
         .manage(live_clients)
@@ -183,7 +195,15 @@ pub fn run() {
             get_bilibili_auth_status,
             start_bilibili_qr_login,
             poll_bilibili_qr_login,
-            logout_bilibili
+            logout_bilibili,
+            patch_hub::get_patch_state,
+            patch_hub::check_patches,
+            patch_hub::set_patch_enabled,
+            patch_hub::rollback_patch,
+            patch_hub::report_patch_health,
+            app_update::check_app_update,
+            app_update::install_app_update,
+            app_update::open_release_page
         ])
         .run(tauri::generate_context!())
         .expect("error while running Qiliu");

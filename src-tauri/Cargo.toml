@@ -1,6 +1,6 @@
 [package]
 name = "qiliu"
-version = "1.4.1"
+version = "1.5.0"
 description = "Qiliu, a focused Huya and Bilibili live player built with Tauri"
 authors = ["Kihara-Ri"]
 edition = "2021"
@@ -31,7 +31,17 @@ reqwest = { version = "0.12", default-features = false, features = ["gzip", "jso
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 url = "2"
+ed25519-dalek = "2"
+sha2 = "0.10"
 tauri-plugin-clipboard-manager = "2"
+tauri-plugin-opener = "2"
+
+# 更新器只在桌面端编译；tauri-plugin-updater 不支持 Android/iOS。
+[target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
+tauri-plugin-updater = "2"
+
+[dev-dependencies]
+tokio = { version = "1", features = ["macros", "rt"] }
 
 [target.'cfg(any(target_os = "macos", target_os = "ios"))'.dependencies]
 apple-native-keyring-store = { version = "1.0.0", features = ["keychain"] }

@@ -2223,3 +2223,79 @@ input {
 #panel-view-settings .playback-preferences { padding-top: 12px; border-top: 1px solid var(--line); }
 #panel-view-settings .control-preferences { padding-top: 12px; }
 #panel-view-settings .control-preferences p { margin: 6px 0 8px; }
+
+/* 更新中心：设置面板的补丁开关 */
+.update-preferences { padding-top: 12px; border-top: 1px solid var(--line); }
+.update-preferences h3 { font-size: 0.85rem; font-weight: 500; margin: 0 0 12px; }
+.patch-auto-toggle {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 10px;
+  align-items: start;
+  cursor: pointer;
+  font-size: 0.78rem;
+  color: var(--muted);
+}
+.patch-auto-toggle input { margin-top: 2px; accent-color: var(--accent); width: 15px; height: 15px; }
+.patch-auto-toggle span { display: grid; gap: 3px; }
+.patch-auto-toggle small { color: var(--quiet); font-size: 0.66rem; line-height: 1.5; }
+.update-preferences-note {
+  margin: 10px 0 0;
+  color: var(--quiet);
+  font-size: 0.66rem;
+  line-height: 1.6;
+}
+
+/* 关于面板的应用更新卡片 */
+.app-update {
+  margin-top: var(--space-2xl);
+  border-top: 1px solid var(--line);
+  padding-top: var(--space-lg);
+  display: grid;
+  gap: 10px;
+}
+.update-heading { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+.update-heading h3 { margin: 0; font-size: 0.85rem; font-weight: 500; color: var(--ink); }
+.update-status { color: var(--quiet); font-size: 0.68rem; }
+.app-update[data-tone="available"] .update-status { color: var(--accent); font-weight: 600; }
+.app-update[data-tone="busy"] .update-status { color: var(--muted); }
+.app-update[data-tone="error"] .update-status { color: #e0655f; }
+.app-update[data-tone="latest"] .update-status { color: var(--muted); }
+
+.update-version-line { margin: 0; color: var(--muted); font-size: 0.72rem; }
+.update-notes {
+  margin: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: var(--quiet);
+  font-size: 0.68rem;
+  line-height: 1.7;
+  white-space: pre-line;
+  max-height: 180px;
+  overflow-y: auto;
+}
+.update-footnote { margin: 0; color: var(--quiet); font-size: 0.66rem; line-height: 1.6; }
+.app-update[data-tone="error"] .update-footnote { color: #e0655f; }
+
+.update-progress { display: flex; align-items: center; gap: 10px; }
+.update-progress[hidden] { display: none; }
+.update-progress progress {
+  flex: 1;
+  height: 4px;
+  appearance: none;
+  -webkit-appearance: none;
+  border: none;
+  border-radius: 2px;
+  overflow: hidden;
+  background: var(--line);
+}
+.update-progress progress::-webkit-progress-bar { background: var(--line); border-radius: 2px; }
+.update-progress progress::-webkit-progress-value { background: var(--accent); border-radius: 2px; }
+.update-progress progress:indeterminate { background-image: linear-gradient(90deg, var(--line) 0%, var(--accent) 50%, var(--line) 100%); background-size: 200% 100%; animation: update-progress-slide 1.2s linear infinite; }
+@keyframes update-progress-slide { from { background-position: 200% 0; } to { background-position: -200% 0; } }
+.update-progress output { color: var(--quiet); font-size: 0.66rem; min-width: 72px; text-align: right; }
+
+.update-actions { display: flex; flex-wrap: wrap; gap: var(--space-sm); }
+.update-actions button[hidden] { display: none; }
+.update-hint { margin: 0; color: var(--quiet); font-size: 0.64rem; line-height: 1.6; }

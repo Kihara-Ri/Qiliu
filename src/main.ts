@@ -2,6 +2,7 @@ import { LiveMediaSession } from "./live-media-session";
 import { setupFloatingControls } from "./floating-controls";
 import { StreamSelect } from "./stream-select";
 import "./styles.css";
+import { disposeAppUpdates, initAppUpdates } from "./app-updates";
 import { FavoriteLiveStatus } from "./favorite-live-status";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
@@ -201,6 +202,7 @@ if (savedSource) {
 }
 
 setupFloatingControls(app, settingsTrigger, volumeControl, () => setSettingsOpen(false));
+initAppUpdates();
 
 settingsTrigger.addEventListener("click", () => setSettingsOpen(!settingsOpen));
 panelTabs.forEach((tab, index) => {
@@ -354,6 +356,7 @@ document.addEventListener("keydown", (event) => {
 window.addEventListener("beforeunload", () => {
   window.clearInterval(favoriteStatusTimer);
   cancelBilibiliQrPolling();
+  disposeAppUpdates();
   supervisor.destroy();
 });
 

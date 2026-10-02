@@ -1,7 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "栖流",
-  "version": "1.4.1",
+  "version": "1.5.0",
   "identifier": "com.kiharari.simplelive",
   "build": {
     "beforeDevCommand": "npm run dev",
@@ -27,7 +27,15 @@
       }
     ],
     "security": {
-      "csp": "default-src 'self' customprotocol: asset:; connect-src 'self' https://ldncctvwbcdtxy.liveplay.myqcloud.com ipc: http://ipc.localhost https://*.huya.com https://huya.com https://*.bilibili.com https://bilibili.com https://*.bilivideo.com https://bilivideo.com https://*.douyucdn.cn https://douyucdn.cn https://*.douyucdn2.cn https://douyucdn2.cn https://*.douyucdn3.cn https://douyucdn3.cn https://*.douyucdn4.cn https://douyucdn4.cn https://*.douyucdn5.cn https://douyucdn5.cn https://*.douyucdn6.cn https://douyucdn6.cn https://*.douyu.com https://douyu.com https://*.douyincdn.com https://douyincdn.com https://*.bytecdn.cn https://bytecdn.cn https://*.byteimg.com https://byteimg.com https://*.bytedance.com https://bytedance.com https://*.pstatp.com https://pstatp.com https://*.amemv.com https://amemv.com https://*.douyin.com https://douyin.com; worker-src 'self' blob:; img-src 'self' asset: http://asset.localhost data: https://*.msstatic.com https://*.hdslb.com https://hdslb.com https://*.douyucdn.cn https://*.douyucdn2.cn https://*.douyinpic.com https://*.byteimg.com https://*.douyincdn.com https://*.pstatp.com; media-src 'self' https://ldncctvwbcdtxy.liveplay.myqcloud.com https://*.huya.com https://huya.com https://*.bilivideo.com https://bilivideo.com https://*.bilibili.com https://bilibili.com blob: https://*.douyucdn.cn https://douyucdn.cn https://*.douyucdn2.cn https://douyucdn2.cn https://*.douyucdn3.cn https://douyucdn3.cn https://*.douyucdn4.cn https://douyucdn4.cn https://*.douyucdn5.cn https://douyucdn5.cn https://*.douyucdn6.cn https://douyucdn6.cn https://*.douyu.com https://douyu.com https://*.douyincdn.com https://douyincdn.com https://*.bytecdn.cn https://bytecdn.cn https://*.byteimg.com https://byteimg.com https://*.bytedance.com https://bytedance.com https://*.pstatp.com https://pstatp.com https://*.amemv.com https://amemv.com https://*.douyin.com https://douyin.com; style-src 'self'; font-src 'self'; object-src 'none'; frame-src 'none'; base-uri 'none'; form-action 'none'"
+      "csp": "default-src 'self' customprotocol: asset: qiliu-patch: http://qiliu-patch.localhost; connect-src 'self' https://ldncctvwbcdtxy.liveplay.myqcloud.com ipc: http://ipc.localhost https://*.huya.com https://huya.com https://*.bilibili.com https://bilibili.com https://*.bilivideo.com https://bilivideo.com https://*.douyucdn.cn https://douyucdn.cn https://*.douyucdn2.cn https://douyucdn2.cn https://*.douyucdn3.cn https://douyucdn3.cn https://*.douyucdn4.cn https://douyucdn4.cn https://*.douyucdn5.cn https://douyucdn5.cn https://*.douyucdn6.cn https://douyucdn6.cn https://*.douyu.com https://douyu.com https://*.douyincdn.com https://douyincdn.com https://*.bytecdn.cn https://bytecdn.cn https://*.byteimg.com https://byteimg.com https://*.bytedance.com https://bytedance.com https://*.pstatp.com https://pstatp.com https://*.amemv.com https://amemv.com https://*.douyin.com https://douyin.com; worker-src 'self' blob:; img-src 'self' asset: http://asset.localhost data: https://*.msstatic.com https://*.hdslb.com https://hdslb.com https://*.douyucdn.cn https://*.douyucdn2.cn https://*.douyinpic.com https://*.byteimg.com https://*.douyincdn.com https://*.pstatp.com; media-src 'self' https://ldncctvwbcdtxy.liveplay.myqcloud.com https://*.huya.com https://huya.com https://*.bilivideo.com https://bilivideo.com https://*.bilibili.com https://bilibili.com blob: https://*.douyucdn.cn https://douyucdn.cn https://*.douyucdn2.cn https://douyucdn2.cn https://*.douyucdn3.cn https://douyucdn3.cn https://*.douyucdn4.cn https://douyucdn4.cn https://*.douyucdn5.cn https://douyucdn5.cn https://*.douyucdn6.cn https://douyucdn6.cn https://*.douyu.com https://douyu.com https://*.douyincdn.com https://douyincdn.com https://*.bytecdn.cn https://bytecdn.cn https://*.byteimg.com https://byteimg.com https://*.bytedance.com https://bytedance.com https://*.pstatp.com https://pstatp.com https://*.amemv.com https://amemv.com https://*.douyin.com https://douyin.com; style-src 'self'; font-src 'self'; object-src 'none'; frame-src 'none'; base-uri 'none'; form-action 'none'"
+    }
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDMyMjBBNUE3NjVFNDQyQzEKUldUQlF1UmxwNlVnTXB0amJUbXp3Uk9UY3JleGhVVnovenFCY3JHb0JFOFNMQzh6SDBPbkE5T1cK",
+      "endpoints": [
+        "https://github.com/Kihara-Ri/Qiliu/releases/latest/download/latest.json"
+      ]
     }
   },
   "bundle": {

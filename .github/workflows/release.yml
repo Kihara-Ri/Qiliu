@@ -23,6 +23,10 @@ jobs:
             bundles: nsis
     runs-on: ${{ matrix.os }}
     timeout-minutes: 45
+    env:
+      # 应用内更新器的 minisign 私钥；未配置时走普通构建，仅缺少应用内更新。
+      TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+      TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
 
     steps:
       - name: Checkout
@@ -43,7 +47,13 @@ jobs:
       - name: Verify source
         run: npm run check
 
+      - name: Build installer with updater signing
+        if: env.TAURI_SIGNING_PRIVATE_KEY != ''
+        # 叠加开启 createUpdaterArtifacts：本地与未配密钥的构建不受影响。
+        run: npm run tauri -- build --bundles ${{ matrix.bundles }} --config src-tauri/tauri.updater.conf.json
+
       - name: Build installer
+        if: env.TAURI_SIGNING_PRIVATE_KEY == ''
         run: npm run tauri -- build --bundles ${{ matrix.bundles }}
 
       - name: Collect macOS installer
@@ -59,6 +69,18 @@ jobs:
           dmg="release/栖流 $version.dmg"
           hdiutil verify "$dmg"
           cp "$dmg" "release-assets/Qiliu-$version-macOS-${RUNNER_ARCH}.dmg"
+          # 应用内更新器使用的 macOS 工件：app.tar.gz 与 minisign 签名。
+          tarball="$(find src-tauri/target/release/bundle/macos -maxdepth 1 -name '*.app.tar.gz' | head -n 1)"
+          if [[ -n "$tarball" ]]; then
+            cp "$tarball" "release-assets/Qiliu-$version-macOS-${RUNNER_ARCH}.app.tar.gz"
+            if [[ -f "$tarball.sig" ]]; then
+              cp "$tarball.sig" "release-assets/Qiliu-$version-macOS-${RUNNER_ARCH}.app.tar.gz.sig"
+            else
+              echo "未找到更新器签名（TAURI_SIGNING_PRIVATE_KEY 未配置？），latest.json 将不含 macOS。"
+            fi
+          else
+            echo "未找到 macOS 更新器工件（createUpdaterArtifacts 已启用，理论上不应发生）。"
+          fi
 
       - name: Collect Windows installer
         if: runner.os == 'Windows'
@@ -68,6 +90,12 @@ jobs:
           New-Item -ItemType Directory -Force release-assets | Out-Null
           $installer = Get-ChildItem src-tauri/target/release/bundle/nsis/*.exe | Select-Object -First 1
           Copy-Item $installer.FullName "release-assets/Qiliu-$version-Windows-x64-setup.exe"
+          $signature = "$($installer.FullName).sig"
+          if (Test-Path $signature) {
+            Copy-Item $signature "release-assets/Qiliu-$version-Windows-x64-setup.exe.sig"
+          } else {
+            Write-Host "未找到更新器签名（TAURI_SIGNING_PRIVATE_KEY 未配置？），latest.json 将不含 Windows。"
+          }
 
       - name: Upload installer
         uses: actions/upload-artifact@v4
@@ -185,6 +213,11 @@ jobs:
         run: |
           cp docs/live-playback-fix-2026-09-28.md release-assets/Qiliu-live-playback-report.md
           cp docs/release-process.md release-assets/Qiliu-release-process.md
+
+      - name: Build updater manifest
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          node scripts/make-update-manifest.mjs "$version" release-assets
 
       - name: Publish release
         env:

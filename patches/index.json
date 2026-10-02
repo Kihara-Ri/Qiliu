@@ -1,0 +1,13 @@
+{
+  "schema": 1,
+  "payload": {
+    "baseUrl": "https://raw.githubusercontent.com/Kihara-Ri/Qiliu/main/patches/0/",
+    "files": {},
+    "maxAppVersion": null,
+    "minAppVersion": "1.0.0",
+    "notes": "",
+    "schema": 1,
+    "sequence": 0
+  },
+  "signature": "f61aad56a7348ac868e474b862e12444e5c98e482dbd9ada8a7d9d4e8b6b0aae84ebeaa28fb8e85dab096f99351993d41935d036216b4c5feabc1f8c212f8506"
+}

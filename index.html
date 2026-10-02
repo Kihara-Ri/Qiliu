@@ -236,6 +236,17 @@
               </div>
               <output class="stream-switch-status" id="stream-switch-status" aria-live="polite"></output>
             </section>
+
+            <section class="update-preferences" aria-labelledby="update-preferences-title">
+              <h3 id="update-preferences-title">更新</h3>
+              <label class="patch-auto-toggle" for="patch-auto-toggle">
+                <input type="checkbox" id="patch-auto-toggle" checked />
+                <span>自动应用体验补丁<small>无需确认的小改进，来自官方签名校验后的补丁包</small></span>
+              </label>
+              <p class="update-preferences-note">
+                应用的新版本仍会在「关于」中提示，确认后才会更新；收藏、上次播放与登录数据在两种更新中都会保留。
+              </p>
+            </section>
             <details class="control-preferences" open>
               <summary>画面控件</summary>
               <label for="control-active-opacity">激活时可见度 <output id="control-active-output">100%</output></label>
@@ -288,7 +299,7 @@
               <img src="/app-icon.svg" alt="" />
               <div>
                 <strong>栖流</strong>
-                <span>Qiliu · 1.4.1 · AGPL-3.0-only</span>
+                <span>Qiliu · 1.5.0 · AGPL-3.0-only</span>
               </div>
             </div>
 
@@ -306,6 +317,27 @@
                 <p>收藏保存在本机；Bilibili 登录凭据单独存放在当前系统的安全凭据存储中。</p>
               </details>
             </div>
+
+            <section class="app-update" id="app-update" data-tone="idle" aria-labelledby="app-update-title">
+              <div class="update-heading">
+                <h3 id="app-update-title">应用更新</h3>
+                <output class="update-status" id="update-status" aria-live="polite">尚未检查</output>
+              </div>
+              <p class="update-version-line" id="update-version-line">应用 — · 体验补丁 —</p>
+              <p class="update-notes" id="update-notes" aria-live="polite" hidden></p>
+              <p class="update-footnote" id="update-footnote" hidden></p>
+              <div class="update-progress" id="update-progress" hidden>
+                <progress id="update-progress-bar" max="100" value="0"></progress>
+                <output id="update-progress-label" for="update-progress-bar">0%</output>
+              </div>
+              <div class="update-actions">
+                <button class="account-secondary" id="update-check" type="button">检查更新</button>
+                <button class="account-primary" id="update-confirm" type="button" hidden>下载并重启</button>
+                <button class="account-secondary" id="update-open-page" type="button" hidden>前往发布页</button>
+                <button class="account-secondary" id="patch-rollback" type="button" hidden>回滚补丁</button>
+              </div>
+              <p class="update-hint">体验补丁自动应用；应用版本更新需确认后安装，用户数据保持不变。</p>
+            </section>
 
             <div class="about-links" aria-label="GitHub 参考项目">
               <div>

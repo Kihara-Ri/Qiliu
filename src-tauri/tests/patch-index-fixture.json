@@ -1,0 +1,23 @@
+{
+  "description": "由 scripts/make-patch.mjs --fixture 生成；对应测试种子 0x01*32，请勿用于生产。",
+  "testPublicKeyHex": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c",
+  "canonicalJson": "{\"baseUrl\":\"https://raw.githubusercontent.com/Kihara-Ri/Qiliu/main/patches/7/\",\"files\":{\"entry.js\":\"376987340e41d16c897cddf2c1f646102eb084c830be4027d20cbd43688967a3\"},\"maxAppVersion\":null,\"minAppVersion\":\"1.0.0\",\"notes\":\"fixture：仅供 Rust 单元测试使用\",\"schema\":1,\"sequence\":7}",
+  "envelope": {
+    "schema": 1,
+    "payload": {
+      "baseUrl": "https://raw.githubusercontent.com/Kihara-Ri/Qiliu/main/patches/7/",
+      "files": {
+        "entry.js": "376987340e41d16c897cddf2c1f646102eb084c830be4027d20cbd43688967a3"
+      },
+      "maxAppVersion": null,
+      "minAppVersion": "1.0.0",
+      "notes": "fixture：仅供 Rust 单元测试使用",
+      "schema": 1,
+      "sequence": 7
+    },
+    "signature": "c9db00e7bddc37948e1cb6384531c25a8465804260daea2d1278503be081a189e7a66f1d946b656a22f461a87e91167cc792b4369f2cc44299a2b76d7b087e05"
+  },
+  "files": {
+    "entry.js": "Ly8gUnVzdCDljZXlhYPmtYvor5Xkvb/nlKjnmoTooaXkuIHlhaXlj6MgZml4dHVyZe+8muS7hemqjOivgeWKoOi9veeuoee6v++8jOS4jeWBmuS7u+S9leWunumZheS/ruaUueOAggpleHBvcnQgZGVmYXVsdCBmdW5jdGlvbiBhcHBseSgpIHsKICByZXR1cm4gUHJvbWlzZS5yZXNvbHZlKCJmaXh0dXJlLWFwcGxpZWQiKTsKfQo="
+  }
+}
