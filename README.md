@@ -4,7 +4,7 @@
   <img src="public/app-icon.svg" width="128" height="128" alt="栖流 Qiliu 直播播放器图标">
 </p>
 
-**在 macOS、Windows 和 Android 上，集中收藏并观看虎牙、哔哩哔哩（Bilibili / B站）、斗鱼、抖音直播和央视频道。**
+**在 macOS、Windows 和 Android 上，集中收藏并观看虎牙、哔哩哔哩（Bilibili / B站）、斗鱼、抖音、Twitch 直播和央视频道。**
 
 栖流是一款开源直播播放器，适合长期观看固定直播间、希望界面简洁的用户。粘贴直播间链接即可播放，收藏常看的主播，下次打开继续播放上次的直播间。界面不包含弹幕、礼物和推荐信息流，同一时间播放一路直播。
 
@@ -53,6 +53,7 @@ Android 文件名带 `-debug.apk` 的构建用于测试：同样是 release 编�
 | 哔哩哔哩 / Bilibili / B站 | `live.bilibili.com` 直播间链接 | 支持扫码登录；画质取决于账号权限与直播间实际提供的档位 |
 | 斗鱼 | 数字房间、房间别名、带 `rid` 的活动链接 | 画质与 CDN 线路以平台返回值为准 |
 | 抖音 | `live.douyin.com` 直播间链接、`v.douyin.com` 分享短链接 | 若短链接未指向可解析的直播间，请使用直播间直链 |
+| Twitch | `twitch.tv/<频道>` 公开直播间链接 | 匿名公开频道，H.264 HLS 多档画质；订阅/地区限制的频道会提示原因，不显示为未开播 |
 | 央视频道 | `tv.cctv.com/live/...` 央视官网直播链接 | 目前支持 CCTV-1 综合与 CCTV-13 新闻；其余频道需平台授权，暂不在公开线路提供 |
 
 应用可从分享文案中提取受支持的链接。平台验证、地区限制、付费权限或接口变更可能导致部分直播间无法解析。
@@ -61,7 +62,7 @@ Android 文件名带 `-debug.apk` 的构建用于测试：同样是 release 编�
 
 ### Mac 上可以用栖流看 B站、虎牙或斗鱼直播吗？
 
-可以。栖流面向 macOS、Windows 与 Android，支持虎牙、Bilibili、斗鱼、抖音直播和央视频道（CCTV-1、CCTV-13）。请从发布页选择适合设备架构的安装包。
+可以。栖流面向 macOS、Windows 与 Android，支持虎牙、Bilibili、斗鱼、抖音、Twitch 直播和央视频道（CCTV-1、CCTV-13）。请从发布页选择适合设备架构的安装包。
 
 ### 支持弹幕、多开或搜索主播吗？
 
@@ -208,6 +209,7 @@ src-tauri/src/
   douyin.rs                  抖音房间与播放线路
   douyin_sign.rs             抖音请求签名
   cctv.rs                    央视频道表、CDN HLS 画质校验
+  twitch.rs                  Twitch 匿名令牌、Usher HLS 画质解析、播放列表 IPC
   live_source.rs             直播来源与链接处理
   stream.rs                  跨平台统一播放信号
   lib.rs                     Tauri 命令入口与平台路由

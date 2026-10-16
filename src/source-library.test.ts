@@ -227,3 +227,38 @@ describe("CCTV channel sources", () => {
     });
   });
 });
+
+describe("Twitch channel sources", () => {
+  it.each([
+    ["https://www.twitch.tv/jankos", "twitch:jankos"],
+    ["twitch.tv/Jankos?sr=a", "twitch:jankos"],
+    ["https://m.twitch.tv/jankos/videos", "twitch:jankos"],
+    ["快来看 https://www.twitch.tv/Jankos 的直播", "twitch:jankos"],
+  ])("normalizes %s", (input, id) => {
+    expect(normalizeLiveSource(input)).toMatchObject({
+      ok: true,
+      id,
+      source: "https://www.twitch.tv/jankos",
+      platform: "twitch",
+      platformLabel: "Twitch",
+    });
+  });
+  it.each([
+    "https://www.twitch.tv/directory",
+    "https://www.twitch.tv/",
+    "https://twitch.tv.evil.test/jankos",
+    "https://www.twitch.tv:8443/jankos",
+    "https://www.twitch.tv/ab",
+  ])("rejects %s", (input) => {
+    expect(normalizeLiveSource(input).ok).toBe(false);
+  });
+  it("keeps twitch favorites across restarts", () => {
+    const normalized = normalizeLiveSource("https://www.twitch.tv/jankos");
+    if (!normalized.ok) throw new Error(normalized.message);
+    const storage = memoryStorage();
+    let library = addOrActivateSource(emptySourceLibrary(), normalized, 1);
+    library = updateActiveFavoriteMetadata(library, { platform: "twitch", anchor: "Jankos" });
+    writeSourceLibrary(storage, library);
+    expect(readSourceLibrary(storage).favorites[0]).toMatchObject({ platform: "twitch", anchor: "Jankos" });
+  });
+});

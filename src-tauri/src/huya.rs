@@ -114,6 +114,119 @@ impl HuyaClient {
         requested_line_index: usize,
         bitrate: u32,
     ) -> Result<LiveStream, String> {
+        self.resolve_with_transport(source, requested_line_index, bitrate, false).await
+    }
+
+    pub async fn resolve_hls(
+        &self,
+        source: &str,
+        requested_line_index: usize,
+        bitrate: u32,
+    ) -> Result<LiveStream, String> {
+        self.resolve_with_transport(source, requested_line_index, bitrate, true).await
+    }
+
+    /// Refresh a signed HLS URL for the same CDN and quality without altering
+    /// the persistent Hls.js / MediaSource playback session.
+    pub async fn renew_hls(
+        &self,
+        source: &str,
+        cdn_type: &str,
+        bitrate: u32,
+    ) -> Result<String, String> {
+        if bitrate > MAX_BITRATE_KBPS || cdn_type.is_empty() || cdn_type.len() > 20 {
+            return Err("虎牙 HLS 线路或码率不正确".to_string());
+        }
+        let room_id = parse_room_id(source)?;
+        let payload = self.room_info(&room_id).await?;
+        let data = payload.get("data").ok_or("虎牙房间信息为空")?;
+        if !data.get("liveStatus").and_then(Value::as_str)
+            .is_some_and(|state| state.eq_ignore_ascii_case("ON")) {
+            return Err("虎牙直播已结束，无法续签 HLS".to_string());
+        }
+        let line = extract_hls_lines(data).into_iter()
+            .find(|line| line.cdn_type.eq_ignore_ascii_case(cdn_type))
+            .ok_or("当前虎牙 HLS CDN 线路已不可用")?;
+        let url = build_play_url(&line, bitrate, now_millis()?)?;
+        self.probe_hls_playlist(&url).await?;
+        Ok(url)
+    }
+
+    /// Prove that the newly signed URL is a usable HLS media playlist before
+    /// publishing it. CDN metadata alone is not sufficient (can return 404).
+    async fn probe_hls_playlist(&self, url: &str) -> Result<(), String> {
+        validated_huya_media_url(url)?;
+        let http = Client::builder()
+            .connect_timeout(Duration::from_secs(3))
+            .timeout(Duration::from_secs(5))
+            .redirect(reqwest::redirect::Policy::none())
+            .build()
+            .map_err(|_| "无法创建虎牙 HLS 检测客户端".to_string())?;
+        let response = http.get(url)
+            .header(USER_AGENT, HUYA_USER_AGENT)
+            .header(REFERER, "https://www.huya.com/")
+            .header(ORIGIN, "tauri://localhost")
+            .header(reqwest::header::CACHE_CONTROL, "no-store")
+            .send().await.map_err(|_| "虎牙 HLS 播放列表暂时无法访问".to_string())?;
+        if !response.status().is_success() {
+            return Err(format!("虎牙 HLS CDN 返回 {}", response.status()));
+        }
+        if response.content_length().is_some_and(|bytes| bytes > 256 * 1024) {
+            return Err("虎牙 HLS 播放列表超过大小限制".to_string());
+        }
+        let bytes = response.bytes().await
+            .map_err(|_| "读取虎牙 HLS 播放列表失败".to_string())?;
+        if bytes.len() > 256 * 1024 {
+            return Err("虎牙 HLS 播放列表超过大小限制".to_string());
+        }
+        let text = std::str::from_utf8(&bytes)
+            .map_err(|_| "虎牙 HLS 播放列表无效".to_string())?;
+        if !text.starts_with("#EXTM3U") || !text.contains("#EXT-X-MEDIA-SEQUENCE:") {
+            return Err("虎牙 CDN 没有返回可播放的 HLS 媒体列表".to_string());
+        }
+        // A 200 playlist is not sufficient: the CDN's oldest listed segment can
+        // already be 404 (Huya's sliding window). Playback only needs the newest
+        // segments, so probe those, newest first.
+        let base = Url::parse(url).map_err(|_| "HLS URL 无效")?;
+        let segments: Vec<&str> = text.lines()
+            .filter(|line| !line.is_empty() && !line.starts_with('#'))
+            .collect();
+        if segments.is_empty() {
+            return Err("虎牙 HLS 列表尚无媒体分片".to_string());
+        }
+        let mut last_error = "虎牙 HLS 分片暂时无法访问".to_string();
+        for segment in segments.iter().rev().take(2) {
+            let segment_url = base.join(segment).map_err(|_| "HLS 分片 URL 无效")?;
+            validated_huya_media_url(segment_url.as_str())?;
+            let response = http.get(segment_url)
+                .header(USER_AGENT, HUYA_USER_AGENT)
+                .header(REFERER, "https://www.huya.com/")
+                .header(ORIGIN, "tauri://localhost")
+                .header(reqwest::header::RANGE, "bytes=0-1023")
+                .send().await;
+            let mut response = match response {
+                Ok(response) => response,
+                Err(_) => continue,
+            };
+            if !response.status().is_success() {
+                last_error = format!("虎牙 HLS 分片 CDN 返回 {}", response.status());
+                continue;
+            }
+            match response.chunk().await {
+                Ok(Some(_)) => return Ok(()),
+                _ => last_error = "虎牙 HLS 分片为空".to_string(),
+            }
+        }
+        Err(last_error)
+    }
+
+    async fn resolve_with_transport(
+        &self,
+        source: &str,
+        requested_line_index: usize,
+        bitrate: u32,
+        prefer_hls: bool,
+    ) -> Result<LiveStream, String> {
         if bitrate > MAX_BITRATE_KBPS {
             return Err("播放码率超出允许范围".to_string());
         }
@@ -229,14 +342,34 @@ impl HuyaClient {
             });
         }
 
-        let lines = extract_live_lines(data);
+        let lines = if prefer_hls { extract_hls_lines(data) } else { extract_live_lines(data) };
         if lines.is_empty() {
             return Err("当前直播间没有可用的直播线路".to_string());
         }
 
-        let line_index = requested_line_index % lines.len();
+        let mut line_index = requested_line_index % lines.len();
+        let mut url = build_play_url(&lines[line_index], bitrate, now_millis()?)?;
+        if prefer_hls {
+            let mut usable = None;
+            let mut failures: Vec<String> = Vec::new();
+            for offset in 0..lines.len() {
+                let index = (line_index + offset) % lines.len();
+                let candidate = build_play_url(&lines[index], bitrate, now_millis()?)?;
+                match self.probe_hls_playlist(&candidate).await {
+                    Ok(()) => {
+                        usable = Some((index, candidate));
+                        break;
+                    }
+                    Err(error) => failures.push(error),
+                }
+            }
+            let (selected_index, signed_url) = usable.ok_or_else(|| {
+                format!("虎牙当前所有 HLS CDN 都没有返回有效直播清单（{}）", failures.join("；"))
+            })?;
+            line_index = selected_index;
+            url = signed_url;
+        }
         let line = &lines[line_index];
-        let url = build_play_url(line, bitrate, now_millis()?)?;
         let (quality_label, nominal_bitrate) = selected_quality(data, bitrate);
         let line_options = live_line_options(&lines);
         let quality_options = available_qualities(data);
@@ -316,6 +449,14 @@ fn parse_room_id(source: &str) -> Result<String, String> {
 }
 
 fn extract_live_lines(data: &Value) -> Vec<RawLine> {
+    extract_live_lines_with_transport(data, false)
+}
+
+fn extract_hls_lines(data: &Value) -> Vec<RawLine> {
+    extract_live_lines_with_transport(data, true)
+}
+
+fn extract_live_lines_with_transport(data: &Value, prefer_hls: bool) -> Vec<RawLine> {
     let profile_uid = data
         .pointer("/profileInfo/uid")
         .and_then(value_as_u64)
@@ -337,7 +478,7 @@ fn extract_live_lines(data: &Value) -> Vec<RawLine> {
                 .unwrap_or_default()
                 .trim();
             let (base_url, anti_code, is_flv) =
-                if !flv_base_url.is_empty() && !flv_anti_code.is_empty() {
+                if !prefer_hls && !flv_base_url.is_empty() && !flv_anti_code.is_empty() {
                     (flv_base_url.to_string(), flv_anti_code.to_string(), true)
                 } else {
                     (
@@ -744,6 +885,73 @@ mod tests {
         assert_eq!(query.get("u").unwrap(), "3160320");
         assert_eq!(query.get("codec").unwrap(), "264");
         assert_eq!(query.get("ratio").unwrap(), "4000");
+    }
+
+    #[test]
+    fn selects_hls_even_when_the_same_cdn_also_has_flv() {
+        let data = json!({
+            "profileInfo": { "uid": 42 },
+            "stream": {
+                "baseSteamInfoList": [{
+                    "sCdnType": "HS",
+                    "sFlvUrl": "http://hs.flv.huya.com/src",
+                    "sFlvAntiCode": "flv_token",
+                    "sHlsUrl": "http://hs.hls.huya.com/src",
+                    "sHlsAntiCode": "hls_token",
+                    "sStreamName": "42-demo",
+                    "lPresenterUid": 42
+                }]
+            }
+        });
+        let flv = extract_live_lines(&data);
+        let hls = extract_hls_lines(&data);
+        assert_eq!(flv.len(), 1);
+        assert_eq!(hls.len(), 1);
+        assert!(flv[0].is_flv);
+        assert!(!hls[0].is_flv);
+        assert_eq!(hls[0].anti_code, "hls_token");
+        assert_eq!(hls[0].base_url, "http://hs.hls.huya.com/src");
+    }
+
+    #[test]
+    #[ignore = "requires a currently live public Huya room and network access"]
+    fn resolves_and_renews_current_live_hls() {
+        tauri::async_runtime::block_on(async {
+            let room = std::env::var("SIMPLE_LIVE_HUYA_TEST_ROOM")
+                .unwrap_or_else(|_| "691406".to_string());
+            let source = format!("https://www.huya.com/{room}");
+            let client = HuyaClient::new().unwrap();
+            let first = client.resolve_hls(&source, 0, 0).await.unwrap();
+            assert!(first.is_live, "the chosen room is not currently live");
+            assert_eq!(first.format, "hls");
+            let first_url = first.url.as_deref().unwrap();
+            let newer = client.renew_hls(&source, &first.line_name, 0).await.unwrap();
+            assert_ne!(newer, first_url, "a renewal must issue a new signed URL");
+            for url in [first_url, newer.as_str()] {
+                let response = client.http.get(url)
+                    .header("Origin", "http://tauri.localhost")
+                    .send().await.unwrap().error_for_status().unwrap();
+                let text = response.text().await.unwrap();
+                assert!(text.starts_with("#EXTM3U"), "must load HLS playlist");
+                assert!(text.contains("#EXT-X-MEDIA-SEQUENCE:"));
+                eprintln!("huya_hls_cdn={} sequence={:?}",
+                    first.line_name,
+                    text.lines().find(|line| line.starts_with("#EXT-X-MEDIA-SEQUENCE:")));
+                let segment = text.lines().find(|line| {
+                    !line.is_empty() && !line.starts_with('#')
+                }).expect("live HLS list should include a media segment");
+                let segment_url = Url::parse(url).unwrap().join(segment).unwrap();
+                validated_huya_media_url(segment_url.as_str()).unwrap();
+                let mut response = client.http.get(segment_url)
+                    .header("Origin", "http://tauri.localhost")
+                    .header("Range", "bytes=0-1023")
+                    .send().await.unwrap().error_for_status().unwrap();
+                eprintln!("huya_hls_segment_status={} cors={:?}",
+                    response.status(), response.headers().get("access-control-allow-origin"));
+                assert!(response.chunk().await.unwrap().is_some(),
+                    "HLS media segment must be readable");
+            }
+        });
     }
 
     #[test]

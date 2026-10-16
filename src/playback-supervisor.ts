@@ -8,6 +8,8 @@ import Hls, {
 } from "hls.js";
 import mpegts from "mpegts.js";
 import { bilibiliLivePlaylistConfig } from "./hls-playlist-policy";
+import { twitchHlsPlaylistConfig } from "./twitch-hls-playlist-loader";
+import { HuyaHlsLease, huyaHlsPlaylistConfig, huyaHlsRetryConfig } from "./huya-hls-playlist-loader";
 import {
   BILIBILI_BUFFER_WINDOW_MS,
   decideRecoveryLine,
@@ -109,7 +111,22 @@ const BILIBILI_REFILL_TIMEOUT_MS = 12_000;
 const OFFLINE_RECHECK_MS = 30_000;
 const STABLE_RESET_MS = 60_000;
 const HUYA_CONTINUATION_PREFETCH_MS = 100_000;
+const HUYA_HANDOFF_OVERLAP_MS = 380;
+const HLS_RECOVERY_WINDOW_MS = 120_000;
+const HLS_INPLACE_RECOVERIES = 4;
 const RECONNECT_DELAYS_MS = [0, 1_000, 2_000, 4_000, 8_000, 15_000] as const;
+
+function diag(message: string): void {
+  void invoke("playback_log", { line: `${new Date().toISOString()} ${message}` }).catch(() => undefined);
+}
+
+function bufferedRanges(video: HTMLVideoElement): string {
+  const parts: string[] = [];
+  for (let i = 0; i < video.buffered.length; i += 1) {
+    parts.push(`${video.buffered.start(i).toFixed(2)}-${video.buffered.end(i).toFixed(2)}`);
+  }
+  return `[${parts.join(",")}]`;
+}
 
 export class PlaybackSupervisor {
   private source = "";
@@ -132,8 +149,11 @@ export class PlaybackSupervisor {
   private readonly statsTimer: number;
   private currentStream: LiveStream | undefined;
   private hls: Hls | undefined;
+  private huyaHlsLease: HuyaHlsLease | undefined;
+  private resolvedBitrate = 0;
   private mpegtsPlayer: ReturnType<typeof mpegts.createPlayer> | undefined;
-  private hlsMediaRecoveryCount = 0;
+  private hlsRecoveries: number[] = [];
+  private lastDiagAt = 0;
   private lastFrameCount: number | undefined;
   private lastStatsAt = performance.now();
   private measuredBitrateKbps: number | null = null;
@@ -146,6 +166,7 @@ export class PlaybackSupervisor {
   private lastRecoveryAction = "";
   private continuationCount = 0;
   private continuation: { cancel: () => void } | undefined;
+  private retiringHuyaVideo: { finish: () => void } | undefined;
   private preferStableBilibiliQuality = false;
   private recentBilibiliBufferEvents: number[] = [];
   private lastBilibiliBufferEventAt = 0;
@@ -236,6 +257,7 @@ export class PlaybackSupervisor {
       this.userPaused = true;
       this.clearBufferRefill();
       this.clearContinuationPreparation();
+      this.retiringHuyaVideo?.finish();
       this.video.pause();
       this.emit("paused", "已暂停", "按空格继续播放");
     } else if (this.userPaused || this.video.paused) {
@@ -307,16 +329,19 @@ export class PlaybackSupervisor {
         ? automaticFallback
         : SOURCE_QUALITY_BITRATE_KBPS;
     const platformLabel = platformLabelForSource(this.source);
+    // Live Huya uses a durable Hls.js session. FLV remains the fallback for
+    // unsupported HLS runtimes or repeated failed HLS session recoveries.
+    const useHuyaHls = platformLabel === "虎牙" && this.attempt < 3 && Hls.isSupported();
     this.emit("resolving", "正在取得直播信号", `${platformLabel} · H.264 · 最高可用画质`);
 
     try {
-      const stream = await invoke<LiveStream>("resolve_live_stream", {
-        source: this.source,
-        lineIndex: this.lineCursor,
-        bitrate,
-      });
+      const stream = await invoke<LiveStream>(
+        useHuyaHls ? "resolve_huya_hls_stream" : "resolve_live_stream",
+        { source: this.source, lineIndex: this.lineCursor, bitrate },
+      );
       if (generation !== this.generation) return;
       this.currentStream = stream;
+      this.resolvedBitrate = bitrate;
       this.collectStats();
 
       if (!stream.url) {
@@ -402,6 +427,17 @@ export class PlaybackSupervisor {
 
   private attachHls(url: string): Promise<void> {
     return new Promise<void>((resolve, reject) => {
+      const isHuyaLiveHls = this.currentStream?.platform === "huya"
+        && this.currentStream.isLive && this.currentStream.format === "hls";
+      const lease = isHuyaLiveHls
+        ? new HuyaHlsLease(
+            this.currentStream!.sourceUrl,
+            this.currentStream!.lineName,
+            this.resolvedBitrate,
+            url,
+          )
+        : undefined;
+      this.huyaHlsLease = lease;
       const hls = new Hls({
         enableWorker: true,
         lowLatencyMode: false,
@@ -410,13 +446,16 @@ export class PlaybackSupervisor {
         maxMaxBufferLength: 24,
         backBufferLength: 2,
         liveSyncDurationCount: 3,
-        liveMaxLatencyDurationCount: 8,
+        liveMaxLatencyDurationCount: isHuyaLiveHls ? 7 : 8,
         maxLiveSyncPlaybackRate: 1.08,
         ...(this.currentStream?.platform === "bilibili" && this.currentStream.isLive
           ? bilibiliLivePlaylistConfig() : {}),
+        ...(this.currentStream?.platform === "twitch" && this.currentStream.isLive
+          ? { ...twitchHlsPlaylistConfig(), ...huyaHlsRetryConfig() } : {}),
+        ...(lease ? { ...huyaHlsPlaylistConfig(lease), ...huyaHlsRetryConfig() } : {}),
       });
       this.hls = hls;
-      this.hlsMediaRecoveryCount = 0;
+      this.hlsRecoveries = [];
       let settled = false;
 
       const rejectInitialLoad = (data: ErrorData): void => {
@@ -434,6 +473,13 @@ export class PlaybackSupervisor {
         resolve();
       });
       hls.on(Hls.Events.FRAG_LOADED, (_event, data) => this.handleHlsFragment(hls, data));
+      hls.on(Hls.Events.FRAG_CHANGED, (_event, data) => {
+        diag(`frag-changed sn=${data.frag.sn} cc=${data.frag.cc} start=${data.frag.start.toFixed(2)} dur=${data.frag.duration.toFixed(2)}`);
+      });
+      hls.on(Hls.Events.LEVEL_UPDATED, (_event, data) => {
+        const d = data.details;
+        diag(`level sn=${d.startSN}-${d.endSN} frags=${d.fragments.length} target=${d.targetduration} live=${d.live} disc=${d.fragments.some((f) => f.cc !== d.fragments[0].cc)}`);
+      });
       hls.on(Hls.Events.ERROR, (_event, data) => {
         rejectInitialLoad(data);
         this.handleHlsError(hls, data);
@@ -509,14 +555,34 @@ export class PlaybackSupervisor {
 
   private handleHlsError(hls: Hls, data: ErrorData): void {
     if (this.hls !== hls) return;
+    diag(`hls-error fatal=${data.fatal} ${data.type}/${data.details} code=${data.response?.code ?? ""}`
+      + ` sn=${(data as { frag?: { sn?: unknown } }).frag?.sn ?? ""} t=${this.video.currentTime.toFixed(2)}`
+      + ` buf=${bufferedRanges(this.video)} reason=${data.reason ?? data.error?.message ?? ""}`);
     if (data.details === ErrorDetails.BUFFER_STALLED_ERROR) this.handleWaiting();
     if (!data.fatal || this.connecting) return;
 
-    if (data.type === ErrorTypes.MEDIA_ERROR && this.hlsMediaRecoveryCount === 0) {
-      this.hlsMediaRecoveryCount = 1;
-      this.suppressMediaEventsUntil = Date.now() + 1_000;
-      this.emit("recovering", "正在修复播放", "播放器正在重新连接解码器");
-      hls.recoverMediaError();
+    // A fatal Hls.js error does not mean the MediaSource is unusable. Repair the
+    // existing session first (fresh lease + restart loading, or decoder reset);
+    // rebuilding <video>/MediaSource is the last resort after repeated failures
+    // inside a short window.
+    const now = Date.now();
+    this.hlsRecoveries = this.hlsRecoveries.filter((at) => now - at < HLS_RECOVERY_WINDOW_MS);
+    if (this.hlsRecoveries.length < HLS_INPLACE_RECOVERIES) {
+      const step = this.hlsRecoveries.length;
+      this.hlsRecoveries.push(now);
+      this.lastRecoveryReason = compactReason(hlsErrorMessage(data));
+      this.lastRecoveryAction = "原地修复播放器";
+      this.suppressMediaEventsUntil = now + 1_000;
+      if (data.type === ErrorTypes.MEDIA_ERROR || data.type === ErrorTypes.MUX_ERROR) {
+        if (step > 0) hls.swapAudioCodec();
+        hls.recoverMediaError();
+      } else {
+        void (this.huyaHlsLease?.currentUrl(true) ?? Promise.resolve())
+          .catch(() => undefined)
+          .then(() => {
+            if (this.hls === hls) hls.startLoad(-1);
+          });
+      }
       void this.video.play().catch(() => undefined);
       return;
     }
@@ -627,12 +693,20 @@ export class PlaybackSupervisor {
       if (cancelled || generation !== this.generation || this.userPaused) return;
       // Commit only after a decoded frame and a playable reserve exist. Never
       // unload the active element to prepare its replacement.
+      // Changing the id must not strip positioning from the old foreground
+      // video. This matters for the very first handoff (whose original node
+      // was previously styled by #live-video alone).
+      oldVideo.classList.add("live-video");
       this.unbindVideo();
-      oldVideo.pause();
+      const oldMuted = oldVideo.muted;
       replacement.id = oldVideo.id;
       oldVideo.removeAttribute("id");
-      replacement.muted = oldVideo.muted;
+      replacement.muted = oldMuted;
       replacement.volume = oldVideo.volume;
+      replacement.classList.add("live-video-handoff");
+      // The replacement has decoded video, but WebKit may not yet have
+      // composited its newly visible layer. Crossfade over the still-playing
+      // foreground rather than tearing its layer down in the same task.
       replacement.classList.remove("live-video-preparing");
       this.video = replacement;
       this.mpegtsPlayer = player;
@@ -640,8 +714,20 @@ export class PlaybackSupervisor {
       this.bindVideo();
       this.onVideoChanged(replacement);
       this.bindMpegtsEvents(player, () => {}, () => {}, true);
-      oldPlayer?.destroy();
-      oldVideo.remove();
+      // Both video streams have audio. Let only the new foreground be audible.
+      oldVideo.muted = true;
+      const finishHandoff = () => {
+        window.clearTimeout(retirementTimer);
+        if (this.retiringHuyaVideo?.finish === finishHandoff) {
+          this.retiringHuyaVideo = undefined;
+        }
+        oldVideo.pause();
+        try { oldPlayer?.destroy(); } catch { /* Old decoder may already be closed. */ }
+        oldVideo.remove();
+        replacement.classList.remove("live-video-handoff");
+      };
+      const retirementTimer = window.setTimeout(finishHandoff, HUYA_HANDOFF_OVERLAP_MS);
+      this.retiringHuyaVideo = { finish: finishHandoff };
       nextVideo = undefined;
       nextPlayer = undefined;
       this.continuation = undefined;
@@ -813,6 +899,14 @@ export class PlaybackSupervisor {
       || this.bufferRefillTimer !== undefined) return;
     this.handleProgress();
     const now = Date.now();
+    if (now - this.lastDiagAt >= 5_000) {
+      this.lastDiagAt = now;
+      const q = this.video.getVideoPlaybackQuality?.();
+      diag(`hb t=${this.video.currentTime.toFixed(2)} buf=${bufferedRanges(this.video)} rs=${this.video.readyState}`
+        + ` paused=${this.video.paused} rate=${this.video.playbackRate} frames=${q?.totalVideoFrames}`
+        + ` drop=${q?.droppedVideoFrames} lat=${this.hls?.latency?.toFixed(2)} live=${this.hls?.liveSyncPosition?.toFixed(2)}`
+        + ` bw=${Math.round((this.hls?.bandwidthEstimate ?? 0) / 1000)}k`);
+    }
     const mediaStalledFor = now - this.lastAdvanceAt;
     const frameStalledFor = this.lastFrameCount === undefined
       ? mediaStalledFor
@@ -824,6 +918,7 @@ export class PlaybackSupervisor {
 
     if (stalledFor >= SOFT_STALL_LIMIT_MS && this.softRecoveryAt === 0) {
       this.softRecoveryAt = now;
+      diag(`soft-stall media=${mediaStalledFor} frame=${frameStalledFor} t=${this.video.currentTime.toFixed(2)} buf=${bufferedRanges(this.video)}`);
       if (this.tryCatchUpToLiveEdge()) return;
     }
 
@@ -835,7 +930,19 @@ export class PlaybackSupervisor {
   };
 
   private tryCatchUpToLiveEdge(): boolean {
-    if (!this.currentStream?.isLive || this.currentStream?.format !== "flv") return false;
+    if (!this.currentStream?.isLive) return false;
+    if (this.hls) {
+      // Stuck HLS playback is usually a buffer gap or a skipped segment; jump to
+      // the live sync point and resume loading in the same MediaSource.
+      const target = this.hls.liveSyncPosition;
+      if (target === null || !Number.isFinite(target)) return false;
+      this.emit("connecting", "正在追赶直播", "播放器正在回到最新画面");
+      this.hls.startLoad(target);
+      this.video.currentTime = target;
+      void this.video.play().catch(() => undefined);
+      return true;
+    }
+    if (this.currentStream.format !== "flv") return false;
 
     try {
       // MSE seekable may span holes (or an infinite live timeline); only
@@ -881,6 +988,7 @@ export class PlaybackSupervisor {
     this.failuresOnCurrentLine = decision.failuresOnCurrentLine;
     this.lastFailureAt = decision.lastFailureAt;
     this.reconnectCount += 1;
+    diag(`REBUILD reason=${reason} t=${this.video.currentTime.toFixed(2)} buf=${bufferedRanges(this.video)}`);
     this.lastRecoveryReason = compactReason(reason);
     if (decision.switchLine) {
       this.lineCursor += 1;
@@ -959,7 +1067,9 @@ export class PlaybackSupervisor {
       totalFrames >= this.lastFrameCount &&
       totalFrames > this.lastFrameCount
     ) {
-      frameRate = ((totalFrames - this.lastFrameCount) * 1_000) / elapsedMs;
+      const rate = ((totalFrames - this.lastFrameCount) * 1_000) / elapsedMs;
+      // A decoder reset can jump the counter by thousands; that is not a rate.
+      frameRate = rate <= 300 ? rate : null;
       this.lastFrameAdvanceAt = Date.now();
       this.softRecoveryAt = 0;
     }
@@ -1056,6 +1166,15 @@ export class PlaybackSupervisor {
   }
 
   private connectionHealthLabel(): string {
+    if (this.currentStream?.platform === "huya"
+      && this.currentStream.isLive && this.currentStream.format === "hls") {
+      return [
+        "HLS 持续会话",
+        `签名续租 ${this.huyaHlsLease?.renewals ?? 0} 次`,
+        `故障重连 ${this.reconnectCount} 次`,
+        `换线 ${this.lineSwitchCount} 次`,
+      ].join(" · ");
+    }
     if (this.preferStableBilibiliQuality) {
       return [
         "稳定画质",
@@ -1165,14 +1284,17 @@ export class PlaybackSupervisor {
   }
 
   private destroyHls(): void {
+    this.huyaHlsLease?.close();
+    this.huyaHlsLease = undefined;
     const hls = this.hls;
     this.hls = undefined;
-    this.hlsMediaRecoveryCount = 0;
+    this.hlsRecoveries = [];
     hls?.destroy();
   }
 
   private destroyPlayers(): void {
     this.clearContinuationPreparation();
+    this.retiringHuyaVideo?.finish();
     this.clearBufferRefill();
     this.destroyHls();
     const player = this.mpegtsPlayer;

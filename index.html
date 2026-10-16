@@ -11,7 +11,7 @@
 
   <body>
     <main class="app-shell" id="app" data-phase="idle">
-      <video id="live-video" autoplay playsinline aria-label="直播画面"></video>
+      <video id="live-video" class="live-video" autoplay playsinline aria-label="直播画面"></video>
       <div class="player-wash" aria-hidden="true"></div>
       <div class="window-drag-region" id="window-drag-region" aria-hidden="true"></div>
 
@@ -107,6 +107,29 @@
             aria-labelledby="panel-tab-info"
             data-panel-view="info"
           >
+            <section class="current-room" id="current-room" aria-labelledby="current-room-title" hidden>
+              <div class="current-room-summary">
+                <div class="current-room-avatar-shell" aria-hidden="true">
+                  <img id="current-room-avatar" alt="" referrerpolicy="no-referrer" hidden />
+                  <i class="bi bi-play-fill" id="current-room-avatar-mark"></i>
+                </div>
+                <div class="current-room-copy">
+                  <output id="current-room-state">正在连接</output>
+                  <h3 id="current-room-title">正在读取直播间</h3>
+                  <p id="current-room-anchor">正在读取主播信息</p>
+                </div>
+              </div>
+            </section>
+
+            <section class="playback-preferences" aria-labelledby="playback-preferences-title">
+              <h3 id="playback-preferences-title" class="visually-hidden">画质与线路</h3>
+              <div class="stream-preferences">
+                <label for="quality-select"><span>画质</span><button type="button" id="quality-select" class="stream-select" disabled aria-label="画质">等待播放</button></label>
+                <label for="line-select"><span>线路</span><button type="button" id="line-select" class="stream-select" disabled aria-label="线路">等待播放</button></label>
+              </div>
+              <output class="stream-switch-status" id="stream-switch-status" aria-live="polite"></output>
+            </section>
+
             <form id="source-form" novalidate>
               <label for="source-input">直播间链接</label>
               <div class="source-input-wrap">
@@ -117,7 +140,7 @@
                   inputmode="url"
                   autocomplete="off"
                   spellcheck="false"
-                  placeholder="粘贴虎牙、Bilibili、斗鱼、抖音或央视频道链接"
+                  placeholder="粘贴虎牙、Bilibili、斗鱼、抖音、央视或 Twitch 链接"
                   required
                 />
                 <button
@@ -143,20 +166,8 @@
               <output class="source-action-status" id="source-action-status" aria-live="polite"></output>
             </form>
 
-            <section class="current-room" id="current-room" aria-labelledby="current-room-title" hidden>
-              <div class="current-room-summary">
-                <div class="current-room-avatar-shell" aria-hidden="true">
-                  <img id="current-room-avatar" alt="" referrerpolicy="no-referrer" hidden />
-                  <i class="bi bi-play-fill" id="current-room-avatar-mark"></i>
-                </div>
-                <div class="current-room-copy">
-                  <output id="current-room-state">正在连接</output>
-                  <h3 id="current-room-title">正在读取直播间</h3>
-                  <p id="current-room-anchor">正在读取主播信息</p>
-                </div>
-              </div>
-            </section>
-
+            <details class="stream-details" open>
+              <summary>播放详情</summary>
             <div class="monitor-heading" id="monitor-heading">
               <span class="monitor-signal" aria-hidden="true"></span>
               <output id="monitor-status">等待播放</output>
@@ -176,6 +187,7 @@
                 <div class="stat-wide"><dt>连接恢复</dt><dd id="stat-connection-health">—</dd></div>
               </dl>
             </section>
+            </details>
           </section>
 
           <section
@@ -226,15 +238,6 @@
                   <button id="bilibili-qr-refresh" type="button" hidden>刷新二维码</button>
                 </div>
               </div>
-            </section>
-
-            <section class="playback-preferences" aria-labelledby="playback-preferences-title">
-              <h3 id="playback-preferences-title">播放设置</h3>
-              <div class="stream-preferences">
-                <label for="quality-select"><span>画质</span><button type="button" id="quality-select" class="stream-select" disabled aria-label="画质">等待播放</button></label>
-                <label for="line-select"><span>线路</span><button type="button" id="line-select" class="stream-select" disabled aria-label="线路">等待播放</button></label>
-              </div>
-              <output class="stream-switch-status" id="stream-switch-status" aria-live="polite"></output>
             </section>
 
             <section class="update-preferences" aria-labelledby="update-preferences-title">
@@ -299,7 +302,7 @@
               <img src="/app-icon.svg" alt="" />
               <div>
                 <strong>栖流</strong>
-                <span>Qiliu · 1.5.0 · AGPL-3.0-only</span>
+                <span>Qiliu · 1.5.1 · AGPL-3.0-only</span>
               </div>
             </div>
 
@@ -311,6 +314,10 @@
               <details>
                 <summary>线路与连接恢复</summary>
                 <p>线路表示当前 CDN。应用优先续接同一线路，只在连续失败时才换线。</p>
+              </details>
+              <details>
+                <summary>快捷键与手势</summary>
+                <p>空格 暂停 · F / 双击 全屏 · M 静音 · ↑↓ / 滚轮 音量 · I 打开侧栏 · ⌘/Ctrl+L 输入链接 · Esc 关闭侧栏或退出全屏。</p>
               </details>
               <details>
                 <summary>数据与账号</summary>

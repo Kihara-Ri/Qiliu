@@ -76,7 +76,14 @@ button {
 }
 
 .live-video-preparing {
-  opacity: 0;
+  /* Keep WebKit's video surface eligible for compositing during warm-up. */
+  opacity: 0.001;
+  pointer-events: none;
+}
+
+.live-video-handoff {
+  /* Fade in the decoded replacement while the old decoder still renders. */
+  transition: opacity 260ms linear;
   pointer-events: none;
 }
 
@@ -2299,3 +2306,62 @@ input {
 .update-actions { display: flex; flex-wrap: wrap; gap: var(--space-sm); }
 .update-actions button[hidden] { display: none; }
 .update-hint { margin: 0; color: var(--quiet); font-size: 0.64rem; line-height: 1.6; }
+
+/* Info page order: room → quality/line → link form → collapsible stats. */
+.playback-preferences { padding: 12px 0; }
+#panel-view-info .playback-preferences { border-top: 1px solid var(--line); }
+#panel-view-info #source-form { padding-top: 12px; border-top: 1px solid var(--line); }
+.stream-details { margin-top: 12px; border-top: 1px solid var(--line); padding-top: 4px; }
+.stream-details > summary {
+  cursor: pointer;
+  padding: 10px 0;
+  color: var(--muted);
+  font-size: 0.8rem;
+  list-style: none;
+}
+.stream-details > summary::-webkit-details-marker { display: none; }
+.stream-details > summary::after { content: "  ▾"; color: var(--quiet); }
+.stream-details:not([open]) > summary::after { content: "  ▸"; }
+
+/* Control detail pass: readable labels, tactile feedback, gentler focus. */
+.panel-tab:focus-visible { outline-offset: -6px; border-radius: 10px; }
+.stream-preferences label > span { color: var(--muted); font-size: 0.72rem; letter-spacing: 0.02em; }
+.stream-switch-status { color: var(--muted); font-size: 0.7rem; }
+.stream-details > summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 40px;
+  border-radius: 8px;
+  transition: color 140ms linear;
+}
+.stream-details > summary:hover { color: var(--ink); }
+.stream-details > summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.stream-details > summary::after {
+  content: "";
+  width: 7px;
+  height: 7px;
+  margin-right: 4px;
+  border-right: 1.5px solid currentColor;
+  border-bottom: 1.5px solid currentColor;
+  transform: rotate(45deg) translateY(-2px);
+  transition: transform 220ms var(--ease-out);
+}
+.stream-details:not([open]) > summary::after { content: ""; transform: rotate(-45deg); }
+.play-source, .favorite-source, .account-primary, .account-secondary,
+.source-copy, .favorites-toolbar button, .settings-trigger {
+  transition: transform 120ms var(--ease-out), background-color 140ms linear,
+    border-color 140ms linear, color 140ms linear, opacity 140ms linear;
+}
+.play-source:active, .favorite-source:active, .account-primary:active,
+.account-secondary:active, .source-copy:active, .favorites-toolbar button:active { transform: scale(0.97); }
+.play-source:hover { filter: brightness(1.06); }
+.favorite-source:hover, .account-secondary:hover, .source-copy:hover { border-color: var(--muted); color: var(--ink); }
+.stream-select:hover:not(:disabled) { border-color: var(--muted); }
+#source-input { transition: border-color 140ms linear, box-shadow 140ms linear; }
+#source-input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px oklch(0.68 0.18 32 / 0.18); outline: none; }
+@media (prefers-reduced-motion: reduce) {
+  .play-source:active, .favorite-source:active, .account-primary:active,
+  .account-secondary:active, .source-copy:active { transform: none; }
+  .stream-details > summary::after { transition: none; }
+}

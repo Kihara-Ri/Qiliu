@@ -347,11 +347,50 @@ document.addEventListener("keydown", (event) => {
     event.preventDefault();
     void supervisor.togglePause();
   }
-  if (event.key.toLowerCase() === "f") {
+  if (event.ctrlKey || event.metaKey || event.altKey) return;
+  const key = event.key.toLowerCase();
+  if (key === "f") {
     event.preventDefault();
     void toggleFullscreen();
+  } else if (key === "m") {
+    event.preventDefault();
+    void toggleMute();
+  } else if (key === "i" || key === ",") {
+    event.preventDefault();
+    setSettingsOpen(!settingsOpen);
+  } else if (event.key === "ArrowUp" || event.key === "ArrowDown") {
+    event.preventDefault();
+    void nudgeVolume(event.key === "ArrowUp" ? 0.05 : -0.05);
+  } else if (event.key === "Escape" && !settingsOpen) {
+    void appWindow.isFullscreen().then((fullscreen) => {
+      if (fullscreen) void appWindow.setFullscreen(false);
+    });
   }
 });
+document.addEventListener("keydown", (event) => {
+  // Cmd/Ctrl+L: jump to the room link field, like a browser address bar.
+  if (isPrimaryShortcut(event, "l")) {
+    event.preventDefault();
+    setSettingsOpen(true);
+    setPanelSection("info");
+    sourceInput.focus();
+    sourceInput.select();
+  }
+});
+app.addEventListener("wheel", (event) => {
+  const target = event.target;
+  if (!(target instanceof Element) || target.closest(".settings-panel")) return;
+  event.preventDefault();
+  void nudgeVolume(event.deltaY < 0 ? 0.05 : -0.05);
+}, { passive: false });
+
+async function nudgeVolume(delta: number): Promise<void> {
+  const next = Math.min(1, Math.max(0, Math.round((video.muted ? 0 : video.volume) * 20 + delta * 20) / 20));
+  volumeSlider.value = String(Math.round(next * 100));
+  expandVolumeControl();
+  scheduleVolumeCollapse(true);
+  await setVolumeFromSlider();
+}
 
 window.addEventListener("beforeunload", () => {
   window.clearInterval(favoriteStatusTimer);

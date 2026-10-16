@@ -9,7 +9,7 @@ vi.mock("mpegts.js", () => ({ default: {
   Events: { ERROR: "error", MEDIA_INFO: "media_info", STATISTICS_INFO: "stats", LOADING_COMPLETE: "complete" },
 } }));
 vi.mock("hls.js", async (importOriginal) => ({
-  ...await importOriginal<typeof import("hls.js")>(), default: {},
+  ...await importOriginal<typeof import("hls.js")>(), default: { isSupported: vi.fn(() => true) },
 }));
 
 let supervisor: PlaybackSupervisor;
@@ -38,6 +38,7 @@ beforeEach(() => {
   ahead = 0;
   video = Object.assign(new EventTarget(), {
     pause: vi.fn(), load: vi.fn(), removeAttribute: vi.fn(),
+    classList: { add: vi.fn(), remove: vi.fn() },
     play: vi.fn().mockResolvedValue(undefined), src: "blob:test", readyState: 2,
     currentTime: 0, videoWidth: 1920, videoHeight: 1080,
     buffered: { length: 1, start: () => 0, end: () => ahead },
@@ -123,7 +124,7 @@ it("recovers a dead connection instead of waiting indefinitely for refill", asyn
   vi.advanceTimersByTime(1_001);
   video.dispatchEvent(new Event("waiting"));
   await vi.advanceTimersByTimeAsync(12_100);
-  expect(invoke).toHaveBeenCalledTimes(2);
+  expect(vi.mocked(invoke).mock.calls.filter(([name]: [string, ...unknown[]]) => name !== "playback_log")).toHaveLength(2);
   expect(video.play).not.toHaveBeenCalled();
 });
 
@@ -173,6 +174,18 @@ it("uses actual downloaded ranges for stall recovery, not a broader seekable tim
   expect(video.play).toHaveBeenCalledOnce();
 });
 
+it("prefers a persistent HLS session for Huya live streams", async () => {
+  const url = "https://hs.hls.huya.com/src/demo.m3u8?wsSecret=a&wsTime=abcdef";
+  vi.mocked(invoke).mockResolvedValue({ ...stream(), platform: "huya", isLive: true,
+    sourceUrl: "https://www.huya.com/691406", format: "hls", lineName: "HS", url });
+  supervisor.start("https://www.huya.com/691406");
+  await settle();
+  expect(invoke).toHaveBeenCalledWith("resolve_huya_hls_stream", {
+    source: "https://www.huya.com/691406", lineIndex: 0, bitrate: 0,
+  });
+  expect(samples[samples.length - 1]).toMatchObject({ live: true, platform: "huya" });
+});
+
 function huyaStream() {
   return { ...stream(), platform: "huya", sourceUrl: "https://www.huya.com/196645", roomId: "196645" };
 }
@@ -217,13 +230,40 @@ it("hands off Huya only after replacement frames and buffer exist without cleari
   reserve = 2;
   vi.advanceTimersByTime(100);
   await promise;
-  expect(video.pause).toHaveBeenCalledOnce();
+  // Do not tear down the old decoded surface during the CSS crossfade.
+  expect(video.pause).not.toHaveBeenCalled();
   expect(video.load).not.toHaveBeenCalled();
+  expect(video.classList.add).toHaveBeenCalledWith("live-video");
+  expect(next.classList.add).toHaveBeenCalledWith("live-video-handoff");
+  expect(next.classList.remove).toHaveBeenCalledWith("live-video-preparing");
   expect(next.muted).toBe(false);
+  expect(video.muted).toBe(true);
   expect(next.volume).toBe(0.4);
   expect(next.id).toBe("live-video");
   expect(player.destroy).not.toHaveBeenCalled();
   expect(samples[samples.length - 1]?.connectionHealth).toContain("同线路续接 1 次");
+  vi.advanceTimersByTime(379);
+  expect(video.pause).not.toHaveBeenCalled();
+  vi.advanceTimersByTime(1);
+  expect(video.pause).toHaveBeenCalledOnce();
+  expect(video.remove).toHaveBeenCalledOnce();
+  expect(next.classList.remove).toHaveBeenCalledWith("live-video-handoff");
+});
+
+it("retires the previous Huya decoder immediately on pause without leaking video layers", async () => {
+  vi.mocked(invoke).mockResolvedValue(huyaStream());
+  supervisor.start(huyaStream().sourceUrl);
+  await settle();
+  const next = warmVideo();
+  setupWarmPlayer(next);
+  vi.mocked(video.pause).mockClear();
+  await warm();
+  expect(video.pause).not.toHaveBeenCalled();
+  await supervisor.setPaused(true);
+  expect(video.pause).toHaveBeenCalledOnce();
+  expect(video.remove).toHaveBeenCalledOnce();
+  vi.advanceTimersByTime(1_000);
+  expect(video.remove).toHaveBeenCalledOnce();
 });
 
 it("cancels a pending Huya handoff on pause and never resumes from the stale response", async () => {
@@ -268,5 +308,5 @@ it("returns to normal resolution when a Huya broadcast becomes replay during pre
   await warm();
   expect(samples[samples.length - 1]).toMatchObject({ live: false, replay: true, connecting: false });
   expect(mpegts.createPlayer).not.toHaveBeenCalled();
-  expect(invoke).toHaveBeenCalledTimes(3);
+  expect(vi.mocked(invoke).mock.calls.filter(([name]: [string, ...unknown[]]) => name !== "playback_log")).toHaveLength(3);
 });

@@ -12,6 +12,7 @@ mod live_source;
 mod huya_wup;
 mod patch_hub;
 mod stream;
+mod twitch;
 
 use bilibili::BilibiliClient;
 use bilibili_auth::{BilibiliAuthStatus, BilibiliQrLogin, BilibiliQrPoll};
@@ -20,6 +21,7 @@ use huya::HuyaClient;
 use douyu::DouyuClient;
 use douyin::DouyinClient;
 use stream::LiveStream;
+use twitch::TwitchClient;
 use tauri::{Manager, State};
 use url::Url;
 
@@ -56,6 +58,7 @@ struct LiveClients {
     douyu: DouyuClient,
     douyin: DouyinClient,
     cctv: CctvClient,
+    twitch: TwitchClient,
 }
 
 impl LiveClients {
@@ -66,6 +69,7 @@ impl LiveClients {
             douyu: DouyuClient::new()?,
             douyin: DouyinClient::new()?,
             cctv: CctvClient::new()?,
+            twitch: TwitchClient::new()?,
         })
     }
 
@@ -81,6 +85,7 @@ impl LiveClients {
             SourcePlatform::Douyu => self.douyu.resolve(source, line_index, bitrate).await,
             SourcePlatform::Douyin => self.douyin.resolve(source, line_index, bitrate).await,
             SourcePlatform::Cctv => self.cctv.resolve(source, line_index, bitrate).await,
+            SourcePlatform::Twitch => self.twitch.resolve(source, line_index, bitrate).await,
         }
     }
 }
@@ -92,6 +97,7 @@ enum SourcePlatform {
     Douyu,
     Douyin,
     Cctv,
+    Twitch,
 }
 
 fn source_platform(source: &str) -> Result<SourcePlatform, String> {
@@ -112,7 +118,32 @@ fn source_platform(source: &str) -> Result<SourcePlatform, String> {
     if ["douyu.com", "www.douyu.com", "m.douyu.com"].contains(&host.as_str()) { return Ok(SourcePlatform::Douyu); }
     if ["live.douyin.com", "v.douyin.com"].contains(&host.as_str()) { return Ok(SourcePlatform::Douyin); }
     if ["tv.cctv.com", "www.cctv.com", "live.cctv.com", "cctv.com"].contains(&host.as_str()) { return Ok(SourcePlatform::Cctv); }
-    Err("目前支持虎牙、Bilibili、斗鱼、抖音和央视频道直播间链接".to_string())
+    if ["twitch.tv", "www.twitch.tv", "m.twitch.tv"].contains(&host.as_str()) { return Ok(SourcePlatform::Twitch); }
+    Err("目前支持虎牙、Bilibili、斗鱼、抖音、央视和 Twitch 直播间链接".to_string())
+}
+
+/// Appends one playback diagnostic line to `playback.log` (trimmed at 512 KiB).
+#[tauri::command]
+fn playback_log(app: tauri::AppHandle, line: String) -> Result<(), String> {
+    use std::io::Write;
+    let dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
+    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    let path = dir.join("playback.log");
+    if std::fs::metadata(&path).map(|m| m.len() > 512 * 1024).unwrap_or(false) {
+        let _ = std::fs::rename(&path, dir.join("playback.log.old"));
+    }
+    let mut file = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(path)
+        .map_err(|e| e.to_string())?;
+    writeln!(file, "{}", line.chars().take(600).collect::<String>()).map_err(|e| e.to_string())
+}
+
+/// Text-only HLS playlist fetch for Twitch (see `twitch::fetch_playlist`).
+#[tauri::command]
+async fn fetch_twitch_playlist(url: String) -> Result<String, String> {
+    twitch::fetch_playlist(&url).await
 }
 
 #[tauri::command]
@@ -123,6 +154,7 @@ async fn get_live_status(clients: State<'_, LiveClients>, source: String) -> Res
         SourcePlatform::Douyu => clients.douyu.is_live(&source).await,
         SourcePlatform::Douyin => clients.douyin.is_live(&source).await,
         SourcePlatform::Cctv => clients.cctv.is_live(&source).await,
+        SourcePlatform::Twitch => clients.twitch.is_live(&source).await,
     }
 }
 
@@ -134,6 +166,32 @@ async fn resolve_live_stream(
     bitrate: u32,
 ) -> Result<LiveStream, String> {
     clients.resolve(&source, line_index, bitrate).await
+}
+
+#[tauri::command]
+async fn resolve_huya_hls_stream(
+    clients: State<'_, LiveClients>,
+    source: String,
+    line_index: usize,
+    bitrate: u32,
+) -> Result<LiveStream, String> {
+    if source_platform(&source)? != SourcePlatform::Huya {
+        return Err("只允许虎牙直播使用 HLS 续签入口".to_string());
+    }
+    clients.huya.resolve_hls(&source, line_index, bitrate).await
+}
+
+#[tauri::command]
+async fn renew_huya_hls_lease(
+    clients: State<'_, LiveClients>,
+    source: String,
+    cdn_type: String,
+    bitrate: u32,
+) -> Result<String, String> {
+    if source_platform(&source)? != SourcePlatform::Huya {
+        return Err("只允许续签虎牙 HLS 直播地址".to_string());
+    }
+    clients.huya.renew_hls(&source, &cdn_type, bitrate).await
 }
 
 #[tauri::command]
@@ -191,7 +249,11 @@ pub fn run() {
         .manage(live_clients)
         .invoke_handler(tauri::generate_handler![
             resolve_live_stream,
+            resolve_huya_hls_stream,
+            renew_huya_hls_lease,
             get_live_status,
+            playback_log,
+            fetch_twitch_playlist,
             get_bilibili_auth_status,
             start_bilibili_qr_login,
             poll_bilibili_qr_login,
