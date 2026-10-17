@@ -1,6 +1,6 @@
 [package]
 name = "qiliu"
-version = "1.5.1"
+version = "1.5.2"
 description = "Qiliu, a focused Huya and Bilibili live player built with Tauri"
 authors = ["Kihara-Ri"]
 edition = "2021"
@@ -53,3 +53,6 @@ windows-native-keyring-store = "1.0.0"
 android-native-keyring-store = "1.0.0"
 jni = "0.21.1"
 ndk-context = "0.1.1"
+# Boa's default NaN-boxed JsValue asserts on Android's aarch64 pointer layout and
+# panics (surfacing as "斗鱼签名任务失败"); the enum representation is portable.
+boa_engine = { version = "0.21.1", default-features = false, features = ["annex-b", "jsvalue-enum"] }

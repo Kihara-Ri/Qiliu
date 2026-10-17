@@ -1,5 +1,10 @@
 # 更新记录
 
+## 1.5.2 - 2026-10-17
+
+- 修复 Android 上斗鱼一直提示“斗鱼签名任务失败”：脚本引擎 Boa 默认的 NaN-boxed 值表示与 Android aarch64 指针布局不兼容，签名线程在初始化时断言崩溃；Android 目标改用 `jsvalue-enum` 表示。已在 Android 模拟器上用原生二进制验证 1126960 能完成签名并取得 FLV 流。
+- 修复 Android WebView 在没有播放源时显示灰色系统默认播放图标；输入框占位文字不再被截断。
+
 ## 1.5.1 - 2026-10-17
 
 - 新增 **Twitch** 公开直播间：匿名令牌 + Usher HLS，按分辨率/帧率列出 H.264 画质；Windows/Android 的播放列表经受限 Rust IPC 获取，规避 `tauri.localhost` Origin 的 403。
