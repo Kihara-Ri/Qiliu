@@ -28,11 +28,23 @@ mkdir -p "$output_dir"
 cp -R "$app_path" "$package_dir/$product_name.app"
 ln -s /Applications "$package_dir/Applications"
 
-hdiutil create \
-  -volname "$product_name $version" \
-  -srcfolder "$package_dir" \
-  -ov \
-  -format UDZO \
-  "$output_path"
+# hdiutil intermittently fails with "Resource busy" on CI runners (Spotlight or
+# another process briefly holds the source folder); retry a few times.
+for attempt in 1 2 3 4 5; do
+  if hdiutil create \
+    -volname "$product_name $version" \
+    -srcfolder "$package_dir" \
+    -ov \
+    -format UDZO \
+    "$output_path"; then
+    break
+  fi
+  if [[ "$attempt" == 5 ]]; then
+    echo "hdiutil create 连续失败 5 次" >&2
+    exit 1
+  fi
+  echo "hdiutil create 失败（第 $attempt 次），稍后重试" >&2
+  sleep $((attempt * 5))
+done
 
 shasum -a 256 "$output_path"
