@@ -72,6 +72,15 @@ jobs:
           # 应用内更新器使用的 macOS 工件：app.tar.gz 与 minisign 签名。
           tarball="$(find src-tauri/target/release/bundle/macos -maxdepth 1 -name '*.app.tar.gz' | head -n 1)"
           if [[ -n "$tarball" ]]; then
+            # Tauri created this archive before package:macos sealed the full
+            # .app. Repack the signed bundle and sign the final archive bytes.
+            app_bundle="$(node -p "'src-tauri/target/release/bundle/macos/' + require('./src-tauri/tauri.conf.json').productName + '.app'")"
+            tar -czf "$tarball" -C "$(dirname "$app_bundle")" "$(basename "$app_bundle")"
+            verify_dir="$(mktemp -d)"
+            tar -xzf "$tarball" -C "$verify_dir"
+            codesign --verify --deep --strict "$verify_dir/$(basename "$app_bundle")"
+            rm -rf "$verify_dir"
+            npm run tauri -- signer sign "$tarball"
             cp "$tarball" "release-assets/Qiliu-$version-macOS-${RUNNER_ARCH}.app.tar.gz"
             if [[ -f "$tarball.sig" ]]; then
               cp "$tarball.sig" "release-assets/Qiliu-$version-macOS-${RUNNER_ARCH}.app.tar.gz.sig"

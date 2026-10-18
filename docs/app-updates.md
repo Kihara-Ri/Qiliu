@@ -55,6 +55,7 @@ git add patches/<N> patches/index.json && git commit && git push
 
 - 使用 `tauri-plugin-updater`，端点 `https://github.com/Kihara-Ri/Qiliu/releases/latest/download/latest.json`。
 - CI 在配置了 `TAURI_SIGNING_PRIVATE_KEY` secret 时，以 `--config src-tauri/tauri.updater.conf.json` 叠加开启 `createUpdaterArtifacts` 构建，为 macOS 产出 `Qiliu-<版本>-macOS-<架构>.app.tar.gz`、为 Windows 产出 NSIS 安装包的 `.sig` 签名，并由 `scripts/make-update-manifest.mjs` 汇总成 `latest.json` 一并上传。
+- macOS 更新压缩包在 `package:macos` 为完整 `.app` 签名后重新生成；解包通过 `codesign --verify --deep --strict` 后，再使用更新器私钥签署最终压缩包。更新包签名与包内应用签名都必须有效。
 - 更新器工件**只在 CI 配置密钥时开启**：本地打包与未配置密钥的 CI 走普通构建（`npm run tauri build` 不受影响），发布流程照常，只是没有 `.sig` 与 `latest.json`。
 - 客户端流程：静默检查（自动/手动）→ 「关于」面板出现新版本卡片 → 用户点「下载并重启」→ 下载（带进度）→ minisign 验签 → 安装 → 自动重启。Windows 上安装器以静默模式运行。
 - secret 未配置时 CI 正常发布安装包，只是不生成 `latest.json`，应用内更新保持「已是最新」。
