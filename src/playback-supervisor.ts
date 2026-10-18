@@ -329,14 +329,13 @@ export class PlaybackSupervisor {
         ? automaticFallback
         : SOURCE_QUALITY_BITRATE_KBPS;
     const platformLabel = platformLabelForSource(this.source);
-    // Live Huya uses a durable Hls.js session. FLV remains the fallback for
-    // unsupported HLS runtimes or repeated failed HLS session recoveries.
-    const useHuyaHls = platformLabel === "虎牙" && this.attempt < 3 && Hls.isSupported();
+    // Huya live playback uses FLV with warm continuation. Keep renewable HLS
+    // out of the default path until sustained native playback is validated.
     this.emit("resolving", "正在取得直播信号", `${platformLabel} · H.264 · 最高可用画质`);
 
     try {
       const stream = await invoke<LiveStream>(
-        useHuyaHls ? "resolve_huya_hls_stream" : "resolve_live_stream",
+        "resolve_live_stream",
         { source: this.source, lineIndex: this.lineCursor, bitrate },
       );
       if (generation !== this.generation) return;
@@ -787,7 +786,10 @@ export class PlaybackSupervisor {
 
   private readonly handleProgress = (): void => {
     const current = this.video.currentTime;
-    if (current < this.lastMediaTime || current - this.lastMediaTime >= 0.05) {
+    // Replaying old live footage is not new progress. Retain the high-water
+    // mark until playback advances beyond it; replay seeks may reset normally.
+    const replaySeek = !this.currentStream?.isLive && current < this.lastMediaTime;
+    if (replaySeek || current - this.lastMediaTime >= 0.05) {
       this.lastMediaTime = current;
       this.lastAdvanceAt = Date.now();
       this.softRecoveryAt = 0;
@@ -935,7 +937,10 @@ export class PlaybackSupervisor {
       // Stuck HLS playback is usually a buffer gap or a skipped segment; jump to
       // the live sync point and resume loading in the same MediaSource.
       const target = this.hls.liveSyncPosition;
-      if (target === null || !Number.isFinite(target)) return false;
+      // A failed playlist refresh leaves this value behind the exhausted
+      // buffer. Seeking there loops old footage and postpones real recovery.
+      if (target === null || !Number.isFinite(target)
+        || target - this.video.currentTime < 1.25) return false;
       this.emit("connecting", "正在追赶直播", "播放器正在回到最新画面");
       this.hls.startLoad(target);
       this.video.currentTime = target;

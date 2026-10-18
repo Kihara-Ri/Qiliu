@@ -174,16 +174,89 @@ it("uses actual downloaded ranges for stall recovery, not a broader seekable tim
   expect(video.play).toHaveBeenCalledOnce();
 });
 
-it("prefers a persistent HLS session for Huya live streams", async () => {
-  const url = "https://hs.hls.huya.com/src/demo.m3u8?wsSecret=a&wsTime=abcdef";
-  vi.mocked(invoke).mockResolvedValue({ ...stream(), platform: "huya", isLive: true,
-    sourceUrl: "https://www.huya.com/691406", format: "hls", lineName: "HS", url });
+it("opens Huya through the FLV resolver without depending on HLS playlist availability", async () => {
+  vi.mocked(invoke).mockImplementation(async (command) => {
+    if (command === "resolve_huya_hls_stream") throw new Error("HLS CDN 403");
+    return huyaStream();
+  });
   supervisor.start("https://www.huya.com/691406");
   await settle();
-  expect(invoke).toHaveBeenCalledWith("resolve_huya_hls_stream", {
+  expect(invoke).toHaveBeenCalledWith("resolve_live_stream", {
     source: "https://www.huya.com/691406", lineIndex: 0, bitrate: 0,
   });
-  expect(samples[samples.length - 1]).toMatchObject({ live: true, platform: "huya" });
+  expect(samples[samples.length - 1]).toMatchObject({ live: true, platform: "huya", connecting: false });
+});
+
+async function stalledHls(target: number | null) {
+  vi.mocked(invoke).mockResolvedValue({ ...huyaStream(), format: "hls" });
+  supervisor.start(huyaStream().sourceUrl);
+  await settle();
+  video.currentTime = 159.99;
+  Object.assign(video, {
+    buffered: { length: 1, start: () => 156.03, end: () => 159.99 },
+  });
+  video.dispatchEvent(new Event("timeupdate"));
+  const hls = { liveSyncPosition: target, startLoad: vi.fn(), destroy: vi.fn() };
+  Object.assign(supervisor, { hls });
+  return hls;
+}
+
+it.each([158.03, 159.99, 160.1, null, NaN])(
+  "does not replay buffered HLS footage when the sync point is stale or unusable (%s)",
+  async target => {
+    const hls = await stalledHls(target);
+    vi.advanceTimersByTime(15_000);
+    expect(video.currentTime).toBe(159.99);
+    expect(hls.startLoad).not.toHaveBeenCalled();
+    expect(video.play).not.toHaveBeenCalled();
+  },
+);
+
+it("reconnects a stalled HLS session within its deadline instead of replaying old frames", async () => {
+  await stalledHls(158.03);
+  await vi.advanceTimersByTimeAsync(33_000);
+  expect(video.currentTime).toBe(159.99);
+  expect(vi.mocked(invoke).mock.calls.filter(([name]) => name === "resolve_live_stream")).toHaveLength(2);
+});
+
+it("still catches up when HLS has a newer live position", async () => {
+  const hls = await stalledHls(164);
+  vi.advanceTimersByTime(15_000);
+  expect(video.currentTime).toBe(164);
+  expect(hls.startLoad).toHaveBeenCalledWith(164);
+  expect(video.play).toHaveBeenCalledOnce();
+});
+
+it("does not count backward live seeks or replayed media time as new progress", async () => {
+  await stalledHls(158.03);
+  const progress = supervisor as unknown as { lastAdvanceAt: number; softRecoveryAt: number };
+  const advancedAt = progress.lastAdvanceAt;
+  progress.softRecoveryAt = Date.now();
+  vi.advanceTimersByTime(500);
+  video.currentTime = 158.03;
+  video.dispatchEvent(new Event("timeupdate"));
+  video.currentTime = 159;
+  video.dispatchEvent(new Event("timeupdate"));
+  expect(progress.lastAdvanceAt).toBe(advancedAt);
+  expect(progress.softRecoveryAt).not.toBe(0);
+  video.currentTime = 160.1;
+  video.dispatchEvent(new Event("timeupdate"));
+  expect(progress.lastAdvanceAt).toBe(Date.now());
+  expect(progress.softRecoveryAt).toBe(0);
+});
+
+it("allows replay progress to resume after seeking backward", async () => {
+  vi.mocked(invoke).mockResolvedValue({ ...huyaStream(), isLive: false, isReplay: true, format: "hls" });
+  supervisor.start(huyaStream().sourceUrl);
+  await settle();
+  video.currentTime = 160;
+  video.dispatchEvent(new Event("timeupdate"));
+  vi.advanceTimersByTime(500);
+  video.currentTime = 30;
+  video.dispatchEvent(new Event("timeupdate"));
+  const progress = supervisor as unknown as { lastMediaTime: number; lastAdvanceAt: number };
+  expect(progress.lastMediaTime).toBe(30);
+  expect(progress.lastAdvanceAt).toBe(Date.now());
 });
 
 function huyaStream() {

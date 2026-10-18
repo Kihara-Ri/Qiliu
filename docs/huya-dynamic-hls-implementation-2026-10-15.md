@@ -3,6 +3,7 @@
 日期：2026-10-15
 项目：栖流 Qiliu v1.5.0
 状态：**已接入默认虎牙 HLS 播放路径并通过单元测试和网络探针；原生 WebView 30 分钟长播尚待验收**
+更新（2026-10-18）：已撤回默认 HLS 入口，恢复 HTTP-FLV 与预热续接，并修复过时 HLS 同步位置导致的倒退重播。本文其余内容为 10 月 15 日的历史实现记录；当前修复见 `docs/huya-playback-regression-2026-10-18.md`。
 架构依据：`docs/huya-stable-hls-architecture.md`
 
 ## 1. 与旧版架构的根本区别
