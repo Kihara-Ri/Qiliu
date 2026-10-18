@@ -211,7 +211,7 @@ jobs:
 
       - name: Include investigation and release procedure
         run: |
-          cp docs/live-playback-fix-2026-09-28.md release-assets/Qiliu-live-playback-report.md
+          cp docs/huya-playback-regression-2026-10-18.md release-assets/Qiliu-live-playback-report.md
           cp docs/release-process.md release-assets/Qiliu-release-process.md
 
       - name: Build updater manifest

@@ -1,5 +1,12 @@
 # 更新记录
 
+## 1.5.3 - 2026-10-18
+
+- 修复虎牙缓冲后反复播放旧片段：恢复逻辑只允许向前追赶，过时的 HLS 同步位置不再触发倒退重播，旧媒体时间不再被算作新的直播进展。
+- 虎牙直播默认恢复 HTTP-FLV 与预热续接，保留 HLS 回放和可续签 HLS 实现，待长播验收后再评估默认启用。
+- 新增回归测试；99 项前端测试、58 项 Rust 测试通过。macOS 原生 WKWebView 连续观察约 4 分钟，跨两次同线路续接，未发生故障重连或换线。Windows/Android 尚未完成本次修复的设备长播验收。
+- [修复与验证报告](https://github.com/Kihara-Ri/Qiliu/blob/v1.5.3/docs/huya-playback-regression-2026-10-18.md)。
+
 ## 1.5.2 - 2026-10-17
 
 - 修复 Android 上斗鱼一直提示“斗鱼签名任务失败”：脚本引擎 Boa 默认的 NaN-boxed 值表示与 Android aarch64 指针布局不兼容，签名线程在初始化时断言崩溃；Android 目标改用 `jsvalue-enum` 表示。已在 Android 模拟器上用原生二进制验证 1126960 能完成签名并取得 FLV 流。
